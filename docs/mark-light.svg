@@ -1,0 +1,80 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<svg width="56.4444mm" height="56.4444mm"
+ viewBox="0 0 160 160"
+ xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" version="1.2" baseProfile="tiny">
+<title>Sieve</title>
+<desc>The Sieve mark: a mesh bowl with two grains falling through it and one held back on top. Find, and exclude.</desc>
+<defs>
+</defs>
+<g fill="none" stroke="black" stroke-width="1" fill-rule="evenodd" stroke-linecap="square" stroke-linejoin="bevel" >
+
+<g fill="#f3f1ec" fill-opacity="1" stroke="none" transform="matrix(1,0,0,1,0,0)"
+font-family="Sans Serif" font-size="9" font-weight="400" font-style="normal" 
+>
+<rect x="0" y="0" width="160" height="160"/>
+</g>
+
+<g fill="none" stroke="#000000" stroke-opacity="1" stroke-width="1" stroke-linecap="square" stroke-linejoin="bevel" transform="matrix(1,0,0,1,0,0)"
+font-family="Sans Serif" font-size="9" font-weight="400" font-style="normal" 
+>
+</g>
+
+<g fill="none" stroke="#7a5d18" stroke-opacity="1" stroke-width="3.072" stroke-linecap="square" stroke-linejoin="bevel" transform="matrix(1,0,0,1,0,0)"
+font-family="Sans Serif" font-size="9" font-weight="400" font-style="normal" 
+>
+<path vector-effect="none" fill-rule="evenodd" d="M31.36,59.52 L128.64,59.52 C128.64,110.72 100.48,128.64 80,128.64 C59.52,128.64 31.36,110.72 31.36,59.52 Z "/>
+</g>
+
+<g fill="none" stroke="#7a5d18" stroke-opacity="1" stroke-width="3.072" stroke-linecap="square" stroke-linejoin="bevel" transform="matrix(1,0,0,1,0,0)"
+font-family="Sans Serif" font-size="9" font-weight="400" font-style="normal" 
+>
+</g>
+
+<g fill="none" stroke="#7a5d18" stroke-opacity="1" stroke-width="1.472" stroke-linecap="square" stroke-linejoin="bevel" transform="matrix(1,0,0,1,0,0)"
+font-family="Sans Serif" font-size="9" font-weight="400" font-style="normal" 
+>
+<polyline fill="none" vector-effect="none" points="28.8,70.528 131.2,70.528 " />
+<polyline fill="none" vector-effect="none" points="28.8,81.536 131.2,81.536 " />
+<polyline fill="none" vector-effect="none" points="28.8,92.544 131.2,92.544 " />
+<polyline fill="none" vector-effect="none" points="28.8,103.552 131.2,103.552 " />
+<polyline fill="none" vector-effect="none" points="28.8,114.56 131.2,114.56 " />
+<polyline fill="none" vector-effect="none" points="28.8,125.568 131.2,125.568 " />
+<polyline fill="none" vector-effect="none" points="42.368,56.96 42.368,131.2 " />
+<polyline fill="none" vector-effect="none" points="53.376,56.96 53.376,131.2 " />
+<polyline fill="none" vector-effect="none" points="64.384,56.96 64.384,131.2 " />
+<polyline fill="none" vector-effect="none" points="75.392,56.96 75.392,131.2 " />
+<polyline fill="none" vector-effect="none" points="86.4,56.96 86.4,131.2 " />
+<polyline fill="none" vector-effect="none" points="97.408,56.96 97.408,131.2 " />
+<polyline fill="none" vector-effect="none" points="108.416,56.96 108.416,131.2 " />
+<polyline fill="none" vector-effect="none" points="119.424,56.96 119.424,131.2 " />
+</g>
+
+<g fill="none" stroke="#7a5d18" stroke-opacity="1" stroke-width="3.072" stroke-linecap="square" stroke-linejoin="bevel" transform="matrix(1,0,0,1,0,0)"
+font-family="Sans Serif" font-size="9" font-weight="400" font-style="normal" 
+>
+</g>
+
+<g fill="#c39b24" fill-opacity="1" stroke="none" transform="matrix(1,0,0,1,0,0)"
+font-family="Sans Serif" font-size="9" font-weight="400" font-style="normal" 
+>
+<circle cx="80" cy="67.2" r="6.4"/>
+</g>
+
+<g fill="#1b1813" fill-opacity="1" stroke="none" transform="matrix(1,0,0,1,0,0)"
+font-family="Sans Serif" font-size="9" font-weight="400" font-style="normal" 
+opacity="0.55" >
+<circle cx="63.36" cy="137.6" r="3.328"/>
+</g>
+
+<g fill="#1b1813" fill-opacity="1" stroke="none" transform="matrix(1,0,0,1,0,0)"
+font-family="Sans Serif" font-size="9" font-weight="400" font-style="normal" 
+opacity="0.3" >
+<circle cx="96.64" cy="142.72" r="2.56"/>
+</g>
+
+<g fill="none" stroke="#000000" stroke-opacity="1" stroke-width="1" stroke-linecap="square" stroke-linejoin="bevel" transform="matrix(1,0,0,1,0,0)"
+font-family="Sans Serif" font-size="9" font-weight="400" font-style="normal" 
+>
+</g>
+</g>
+</svg>

@@ -1,0 +1,46 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "sieve-regex"
+version = "1.0.0"
+description = "A regex workbench for security work: build, prove, check and ship patterns."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [{ name = "at0m-b0mb" }]
+keywords = ["regex", "security", "detection", "redos", "sigma", "yara", "grep"]
+classifiers = [
+    "Development Status :: 5 - Production/Stable",
+    "Environment :: X11 Applications :: Qt",
+    "Intended Audience :: Information Technology",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: MacOS :: MacOS X",
+    "Operating System :: Microsoft :: Windows",
+    "Operating System :: POSIX :: Linux",
+    "Programming Language :: Python :: 3",
+    "Topic :: Security",
+    "Topic :: Text Processing",
+]
+dependencies = ["PyQt6>=6.5"]
+
+[project.optional-dependencies]
+dev = ["pytest>=7.0"]
+
+[project.urls]
+Homepage = "https://github.com/at0m-b0mb/Sieve-Regex-Workbench"
+Issues = "https://github.com/at0m-b0mb/Sieve-Regex-Workbench/issues"
+
+[project.scripts]
+sieve = "sieve.cli:main"
+
+[project.gui-scripts]
+sieve-gui = "sieve.ui.app:main"
+
+[tool.setuptools.packages.find]
+include = ["sieve*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
