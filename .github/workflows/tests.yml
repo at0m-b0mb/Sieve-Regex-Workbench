@@ -51,7 +51,7 @@ jobs:
           QT_QPA_PLATFORM: offscreen
         shell: bash
         run: |
-          for f in patterns/*.sieve; do
+          for f in sieve/examples/*.sieve; do
             echo "== $f"
             python -m sieve test "$f"
           done

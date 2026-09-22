@@ -84,6 +84,15 @@ Thirteen confirmed misses, each now covered by a proof case:
   discriminating. Both now say so on the card.
 - **Proof can open a log file**, rather than only a built-in sample or the
   clipboard. The evidence is usually a file.
+- **A first run that produces something.** The empty Build page now offers the
+  five worked examples — one click to a pattern that already passes its own
+  proof cases, which is a better place to start reading from than a blank
+  screen. They moved into the package, so `pip install` carries them.
+- **Hovering a rule's match count lists what it actually matched.** The count
+  says how much; these say what, and seeing the real text is the fastest way
+  to notice a rule is catching the wrong thing.
+- **Undo** for a deleted rule or proof case (Edit ▸ Undo). Deleting used to be
+  final.
 - **Continuous integration** across macOS, Windows and Linux on Python 3.10,
   3.12 and 3.13 — running the suite, proving every shipped example pattern, and
   failing if any library pattern backtracks catastrophically.

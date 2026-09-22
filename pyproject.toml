@@ -41,6 +41,9 @@ sieve-gui = "sieve.ui.app:main"
 [tool.setuptools.packages.find]
 include = ["sieve*"]
 
+[tool.setuptools.package-data]
+"sieve.examples" = ["*.sieve"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-q"

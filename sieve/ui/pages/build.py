@@ -17,6 +17,7 @@ from PyQt6.QtWidgets import (QApplication, QCheckBox, QComboBox, QFrame,
                              QVBoxLayout, QWidget)
 
 from ...core import rules as R
+from ... import examples
 from ...core import redos
 from .. import palette
 from .. import theme
@@ -350,15 +351,28 @@ class BuildPage(QWidget):
         self.rules_box.addStretch(1)
         box.addWidget(self.rules_host)
 
+        # The empty state is the first thing anyone sees, and a blank page is
+        # a poor answer to "what does this do". Offer the worked examples: one
+        # click to a pattern that already passes its own proof cases, which is
+        # a far better place to start reading from than nothing.
         self.empty_note = Card(flat=True)
         self.empty_note.add(label("Nothing here yet", object_name="CardTitle"))
         self.empty_note.add(caption(
             "Start with a Find rule for the thing you are looking for, then "
-            "add Exclude rules for the noise you already know about. Or open "
-            "the Library and take a tested pattern."))
-        pick = QuietButton("Open the Library")
+            "add Exclude rules for the noise you already know about. Or take "
+            "a tested pattern from the Library — or open one of these, each "
+            "of which arrives with its proof cases already passing."))
+        for path, name, intent in examples.listing():
+            button = QuietButton(name)
+            button.setToolTip(intent)
+            button.clicked.connect(
+                lambda _=False, p=path: self._open_example(p))
+            # In a row with a stretch, so they read as a list of choices
+            # rather than a stack of centred blocks.
+            self.empty_note.add_layout(row(button, None))
+        pick = QuietButton("Browse the Library instead")
         pick.clicked.connect(self.goToLibrary.emit)
-        self.empty_note.add(pick)
+        self.empty_note.add_layout(row(pick, None))
         box.addWidget(self.empty_note)
 
         adders = row(
@@ -378,6 +392,21 @@ class BuildPage(QWidget):
 
     def _add(self, kind: str) -> None:
         self.state.add_rule(R.Rule(kind=kind))
+
+    def _open_example(self, path) -> None:
+        try:
+            self.state.load_document(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError) as exc:
+            self.state.status(f"Could not open that example: {exc}", "fail")
+            return
+        # Deliberately not treated as "opened from" that path: it is a
+        # starting point, and saving should not offer to overwrite the copy
+        # that ships with the application.
+        self.state.file_path = None
+        self.state._dirty = False
+        self.state.pathChanged.emit()
+        self.state.status(f"Opened the “{self.state.recipe.name}” example",
+                          "pass")
 
     def _on_name(self, text: str) -> None:
         self.state.recipe.name = text

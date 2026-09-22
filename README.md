@@ -200,7 +200,7 @@ rather than something you remember to check.
 sieve test detections/ssh-brute-force.sieve       # re-run its proof cases
 sieve lint --strict 'my (pattern|here)+'          # ReDoS + portability, exit 1 if risky
 sieve explain '^(?!.*healthcheck).*error'         # read a regex back in English
-sieve scan patterns/aws-keys.sieve ~/src --redact # sweep a tree, redact the hits
+sieve scan sieve/examples/secrets-in-source.sieve ~/src --redact # sweep a tree, redact the hits
 sieve emit detections/x.sieve sigma               # write it out as a Sigma rule
 sieve library rfc1918 --quiet                     # browse the library
 ```

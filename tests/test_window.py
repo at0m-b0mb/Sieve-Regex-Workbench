@@ -19,6 +19,7 @@ from PyQt6.QtWidgets import QApplication
 
 from sieve.core.rules import EXCLUDE, FIND, Rule
 from sieve.ui import theme
+from sieve.ui.widgets import QuietButton
 
 
 @pytest.fixture(scope="module")
@@ -189,11 +190,12 @@ def test_a_document_round_trips_through_the_window(window, app, tmp_path):
 
 
 @pytest.mark.parametrize("name", sorted(
-    p.name for p in __import__("pathlib").Path("patterns").glob("*.sieve")))
+    p.name for p in __import__(
+        "sieve.examples", fromlist=["paths"]).paths()))
 def test_the_shipped_example_patterns_open(window, app, name):
-    from pathlib import Path
+    from sieve.examples import HERE
     window.state.load_document(
-        (Path("patterns") / name).read_text(encoding="utf-8"))
+        (HERE / name).read_text(encoding="utf-8"))
     app.processEvents()
     assert window.state.recipe.rules
     assert window.state.suite.run(window.state.recipe).green
@@ -278,3 +280,29 @@ def test_proof_refuses_to_auto_run_a_catastrophic_shape(window, app):
     assert time.perf_counter() - started < 2.0, "the GUI thread was blocked"
     assert proof.run_anyway.isVisible()
     assert "Not run automatically" in proof.hint.text()
+
+
+def test_the_empty_state_offers_the_worked_examples(window, app):
+    """A blank page is a poor answer to "what does this do"."""
+    from sieve import examples
+    window.state.new_document()
+    window.show_page("build")
+    app.processEvents()
+    build = window.pages["build"]
+    assert build.empty_note.isVisible()
+    labels = {b.text() for b in build.empty_note.findChildren(QuietButton)}
+    for _, name, _ in examples.listing():
+        assert name in labels
+
+
+def test_opening_an_example_does_not_point_save_at_the_shipped_copy(window, app):
+    """It is a starting point, not a document you are editing in place."""
+    from sieve import examples
+    path, name, _ = examples.listing()[0]
+    window.show_page("build")
+    window.pages["build"]._open_example(path)
+    app.processEvents()
+    assert window.state.recipe.name == name
+    assert window.state.recipe.rules
+    assert window.state.file_path is None, "Save would overwrite the package copy"
+    assert not window.state.dirty
