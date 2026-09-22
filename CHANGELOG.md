@@ -60,6 +60,18 @@ Thirteen confirmed misses, each now covered by a proof case:
 - Added a **SHA-1** entry, the hash most vendor IOC feeds publish under, and
   extended the attachment pattern with macro-enabled Office formats and `.xll`.
 
+- **The ReDoS analyser cried wolf on a loaded machine.** The growth exponent
+  was taken from the first and last measurement, with a one-microsecond floor —
+  so scheduler jitter on a shared CI runner fitted a "quadratic" curve through
+  a plainly linear pattern and told the user their innocent regex was
+  dangerous. Each length is now timed best-of-three, points below a 50 µs
+  noise floor are discarded as clock rather than cost, and the exponent is a
+  least-squares fit across every usable point. Where too little signal exists
+  it reports *"ran too fast at every length to show a trend"* rather than
+  inventing a number. A pattern that exceeds the time limit is now graded on
+  *where* it blew up — `^(a+)+$` reports "exceeded the time limit at 24
+  characters of crafted input", which says more than any slope.
+
 ### Added
 
 - **An Insert menu on every rule** — 33 regex constructs by their English names

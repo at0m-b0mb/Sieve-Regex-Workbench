@@ -105,6 +105,10 @@ class SieveMark(QWidget):
         super().__init__(parent)
         self.mode = mode
         self.setFixedSize(size, size)
+        self.setAccessibleName("Sieve")
+        self.setAccessibleDescription(
+            "The Sieve mark: a mesh bowl with two grains falling through it "
+            "and one held back on top.")
 
     def set_mode(self, mode: str) -> None:
         self.mode = mode
@@ -154,6 +158,10 @@ class MatchMap(QWidget):
         self.setMaximumWidth(30)
         self.setCursor(Qt.CursorShape.PointingHandCursor)
         self.setToolTip("Every line of the sample, in order. Click to jump.")
+        # This widget is pure QPainter, so without an explicit description a
+        # screen reader finds nothing here at all — not even that it exists.
+        self.setAccessibleName("Match map")
+        self._describe()
 
     def set_mode(self, mode: str) -> None:
         self.mode = mode
@@ -161,7 +169,24 @@ class MatchMap(QWidget):
 
     def set_rows(self, rows: list[MapRow]) -> None:
         self.rows = rows
+        self._describe()
         self.update()
+
+    def _describe(self) -> None:
+        """Say in words what the ribbon shows, for anything that cannot see it."""
+        from ..core import matcher
+        if not self.rows:
+            self.setAccessibleDescription(
+                "A map of the sample, one mark per line. Nothing loaded yet.")
+            return
+        counts: dict[str, int] = {}
+        for row in self.rows:
+            counts[row.verdict] = counts.get(row.verdict, 0) + 1
+        parts = [f"{n} {matcher.VERDICT_LABEL[v].lower()}"
+                 for v, n in counts.items() if n]
+        self.setAccessibleDescription(
+            f"A map of {len(self.rows)} lines, one mark each, in order: "
+            + ", ".join(parts) + ".")
 
     def set_viewport(self, first: int, last: int) -> None:
         self.viewport_range = (first, last)
@@ -235,6 +260,8 @@ class GrowthCurve(QWidget):
         self.caption = ""
         self.setMinimumHeight(150)
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        self.setAccessibleName("Measured runtime")
+        self.setAccessibleDescription("No measurements yet.")
 
     def set_mode(self, mode: str) -> None:
         self.mode = mode
@@ -243,6 +270,16 @@ class GrowthCurve(QWidget):
     def set_points(self, points, caption: str = "") -> None:
         self.points = [(p.length, max(p.seconds, 1e-7), p.timed_out) for p in points]
         self.caption = caption
+        if self.points:
+            first, last = self.points[0], self.points[-1]
+            self.setAccessibleDescription(
+                f"Measured runtime against input length, on log scales. "
+                f"At {first[0]} characters the pattern took "
+                f"{first[1] * 1000:.2f} milliseconds; at {last[0]} characters, "
+                f"{last[1] * 1000:.2f} milliseconds."
+                + (" The probe hit its time limit." if last[2] else ""))
+        else:
+            self.setAccessibleDescription("No measurements yet.")
         self.update()
 
     def paintEvent(self, event) -> None:
@@ -394,6 +431,13 @@ class FlowChart(QWidget):
         self.mode = mode
         self.setMinimumHeight(360)
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+        self.setAccessibleName("How Sieve works")
+        self.setAccessibleDescription(
+            "Sample text passes through three gates in turn — Find, then "
+            "Require, then Exclude — and what survives becomes kept lines with "
+            "captured fields. The Library feeds patterns into the gates, Proof "
+            "cases hold them in place, Safety checks the pattern for "
+            "catastrophic backtracking, and Ship exports it.")
 
     def set_mode(self, mode: str) -> None:
         self.mode = mode

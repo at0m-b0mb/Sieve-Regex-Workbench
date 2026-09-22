@@ -88,6 +88,7 @@ class Window(QMainWindow):
         self.apply_mode(self.mode)
         self.show_page("build")
         self._update_title()
+        self._restore_geometry()
 
     # -- chrome --------------------------------------------------------------
 
@@ -314,6 +315,7 @@ class Window(QMainWindow):
     def _menus(self) -> None:
         bar = self.menuBar()
         file_menu = bar.addMenu("&File")
+        self.recent_menu = None
         for text, slot, shortcut in (
                 ("New pattern", self.new_file, QKeySequence.StandardKey.New),
                 ("Open…", self.open_file, QKeySequence.StandardKey.Open),
@@ -323,6 +325,12 @@ class Window(QMainWindow):
             action.setShortcut(shortcut)
             action.triggered.connect(slot)
             file_menu.addAction(action)
+
+        # Recents were recorded from the first release and never offered
+        # anywhere, so every session started at a file dialog.
+        file_menu.addSeparator()
+        self.recent_menu = file_menu.addMenu("Open recent")
+        self.recent_menu.aboutToShow.connect(self._fill_recent)
 
         view = bar.addMenu("&View")
         keys = [k for _, items in NAV for k, _ in items] + ["about"]
@@ -337,6 +345,33 @@ class Window(QMainWindow):
         cycle.triggered.connect(self._cycle_theme)
         view.addAction(cycle)
 
+    def _fill_recent(self) -> None:
+        """Rebuilt each time it opens, so a deleted file does not linger."""
+        menu = self.recent_menu
+        menu.clear()
+        paths = self.state.recent_files()
+        if not paths:
+            empty = QAction("Nothing yet", self)
+            empty.setEnabled(False)
+            menu.addAction(empty)
+            return
+        for path in paths:
+            action = QAction(Path(path).name, self)
+            action.setToolTip(path)
+            action.triggered.connect(
+                lambda _=False, p=path: self._open_path(Path(p)))
+            menu.addAction(action)
+
+    def _open_path(self, path: Path) -> None:
+        if not self._confirm_discard():
+            return
+        try:
+            self.state.load_document(path.read_text(encoding="utf-8"), path)
+            self.state.remember_file(path)
+            self.state.status(f"Opened {path.name}", "pass")
+        except (OSError, ValueError, RecipeError) as exc:
+            QMessageBox.warning(self, "Could not open that file", str(exc))
+
     def _status(self, message: str, tone: str = "neutral") -> None:
         self.status_label.setText(message)
         self.status_label.setStyleSheet(
@@ -345,8 +380,17 @@ class Window(QMainWindow):
         QTimer.singleShot(4200, lambda: self.status_label.setText("")
                           if self.status_label.text() == message else None)
 
+    def _restore_geometry(self) -> None:
+        saved = self.state.settings.value("geometry")
+        if saved is not None:
+            try:
+                self.restoreGeometry(saved)
+            except (TypeError, ValueError):
+                pass
+
     def closeEvent(self, event) -> None:
         if self._confirm_discard():
+            self.state.settings.setValue("geometry", self.saveGeometry())
             event.accept()
         else:
             event.ignore()

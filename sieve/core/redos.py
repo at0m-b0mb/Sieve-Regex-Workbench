@@ -269,6 +269,17 @@ LADDER = (4, 6, 8, 10, 12, 14, 16, 18, 20, 22, 24, 26, 28, 30, 32, 36, 40,
           48, 56, 64, 80, 100, 128, 160, 200, 256, 320, 400, 512, 640, 800,
           1000, 1280, 1600, 2000, 2560, 3200)
 
+# Below this, we are measuring the clock and the scheduler rather than the
+# pattern. A shared CI runner under load produced enough jitter at the
+# microsecond scale to fit a "quadratic" curve through a plainly linear
+# pattern — and a checker that cries wolf is one people learn to ignore.
+NOISE_FLOOR = 50e-6
+
+# Each length is timed several times and the BEST run kept. Timing noise is
+# one-sided: interference can only ever make a run slower, so the minimum is
+# the closest thing to the true cost.
+REPEATS = 3
+
 
 def probe(pattern: str, flags: int = 0, *, budget: float = 0.05,
           total_budget: float = 1.5,
@@ -298,12 +309,19 @@ def probe(pattern: str, flags: int = 0, *, budget: float = 0.05,
             blew_up = False
             for n in lengths:
                 text = seed * n + tail
-                start = time.perf_counter()
+                elapsed = None
                 try:
-                    rx.search(text)
+                    for _ in range(REPEATS):
+                        start = time.perf_counter()
+                        rx.search(text)
+                        run = time.perf_counter() - start
+                        elapsed = run if elapsed is None else min(elapsed, run)
+                        if run > budget:
+                            break        # no point repeating a blow-up
                 except Exception:
                     break
-                elapsed = time.perf_counter() - start
+                if elapsed is None:
+                    break
                 over = elapsed > budget
                 runs.append(Measurement(n, elapsed, over))
                 if over:
@@ -324,15 +342,31 @@ def probe(pattern: str, flags: int = 0, *, budget: float = 0.05,
 
 
 def _slope(runs: list[Measurement]) -> float:
-    """Growth exponent: 1.0 is linear, 2.0 is quadratic, above that is trouble."""
-    usable = [m for m in runs if m.seconds > 1e-6]
-    if len(usable) < 2:
-        return 0.0
-    first, last = usable[0], usable[-1]
-    if last.length <= first.length or last.seconds <= 0 or first.seconds <= 0:
-        return 0.0
+    """Growth exponent: 1.0 is linear, 2.0 is quadratic, above that is trouble.
+
+    Fitted by least squares across every usable point rather than taken from
+    the first and last, because two noisy endpoints can describe any curve you
+    like. Points under NOISE_FLOOR are dropped: at that scale the number is
+    the clock's resolution and the scheduler's mood, not the pattern's cost.
+    Returns 0.0 — "no evidence of growth" — when there is not enough signal to
+    say anything, which is the honest answer far more often than a slope is.
+    """
     import math
-    return math.log(last.seconds / first.seconds) / math.log(last.length / first.length)
+    usable = [m for m in runs if m.seconds >= NOISE_FLOOR]
+    if len(usable) < 3:
+        return 0.0
+    xs = [math.log(m.length) for m in usable]
+    ys = [math.log(m.seconds) for m in usable]
+    # Need real spread on both axes before a fit means anything.
+    if max(xs) - min(xs) < 0.7 or max(ys) - min(ys) < 0.7:
+        return 0.0
+    n = len(xs)
+    mx = sum(xs) / n
+    my = sum(ys) / n
+    denom = sum((x - mx) ** 2 for x in xs)
+    if denom <= 0:
+        return 0.0
+    return sum((x - mx) * (y - my) for x, y in zip(xs, ys)) / denom
 
 
 def analyse(pattern: str, flags: int = 0, *, measure: bool = True,
@@ -356,19 +390,29 @@ def analyse(pattern: str, flags: int = 0, *, measure: bool = True,
 
     exponent = _slope(measurements)
     timed_out = any(m.timed_out for m in measurements)
+    blew_at = measurements[-1].length if timed_out and measurements else None
 
-    if timed_out or exponent >= 1.9:
-        grade = CATASTROPHIC if (timed_out and exponent >= 1.9) or exponent >= 2.6 \
-            else SUPERLINEAR
-    elif exponent >= 1.35:
+    # Where it blew up matters more than a slope fitted to the handful of
+    # points before it did. An exponential pattern exceeds the budget while
+    # the input is still tiny, and by then there are too few measurements
+    # above the noise floor to fit anything — so the length is the evidence.
+    if blew_at is not None and blew_at <= 256:
+        grade = CATASTROPHIC
+    elif exponent >= 2.6:
+        grade = CATASTROPHIC
+    elif timed_out or exponent >= 1.35:
         grade = SUPERLINEAR
     elif findings:
         grade = SUSPECT
     else:
         grade = NOTHING_FOUND
 
-    growth = ""
-    if exponent > 0:
+    if blew_at is not None:
+        growth = (f"exceeded the time limit at {blew_at} characters of "
+                  "crafted input")
+        if exponent > 0:
+            growth += f"; time ≈ input^{exponent:.2f}"
+    elif exponent > 0:
         growth = f"time ≈ input^{exponent:.2f}"
         if exponent < 1.2:
             growth += " (linear)"
@@ -376,6 +420,8 @@ def analyse(pattern: str, flags: int = 0, *, measure: bool = True,
             growth += " (quadratic)"
         else:
             growth += " (worse than quadratic)"
+    else:
+        growth = "ran too fast at every length to show a trend"
 
     return Verdict(grade, findings, measurements, attack, growth, checked)
 

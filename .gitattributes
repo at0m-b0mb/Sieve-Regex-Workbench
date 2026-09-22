@@ -1,0 +1,16 @@
+# A saved pattern is JSON that happens to use our extension. Without this,
+# GitHub's linguist attributes it to the RFC 5228 Sieve mail-filtering
+# language — a real language with the same name and nothing to do with this
+# project — and the repository reads as 4% "Sieve".
+*.sieve linguist-language=JSON
+*.sieve linguist-detectable=false
+
+# Screenshots and generated art are not source; keep them out of the diff
+# statistics and out of language detection.
+docs/screenshots/*.png linguist-generated=true
+docs/*.svg linguist-generated=true
+
+# Normalise line endings so the Windows CI job does not see a whole-file diff.
+* text=auto eol=lf
+*.png binary
+*.svg text eol=lf
