@@ -19,6 +19,42 @@ from dataclasses import dataclass, field, asdict
 
 SCHEMA = 1
 
+# A .sieve file is a document people share, so every value in one is untrusted
+# input. Two of them reach the regex engine directly.
+#
+# A capture name is interpolated into `(?P<name>…)`. Left unchecked, the name
+# "n>(a+)+$)(?P<z" closes the group and opens another, so a crafted file can
+# inject arbitrary regex — including a catastrophic shape — through a field
+# that is supposed to be an identifier.
+# ASCII only, deliberately. Python would accept "unicodé" as a group name,
+# but this name is exported to nine engines and Go, Java and JavaScript
+# would each reject it — so a name that works here and fails there is worse
+# than no name at all.
+_GROUP_NAME = re.compile(r"[A-Za-z_][A-Za-z0-9_]*\Z")
+
+# A repetition count is interpolated into `{n}`. `{1000000000}` compiles
+# happily and then tries to do it. No legitimate pattern needs more than this.
+MAX_REPEAT = 10_000
+
+
+def safe_group_name(name: str) -> str:
+    """The name if it is a plain identifier, otherwise nothing.
+
+    Returning "" makes the caller fall back to an unnamed capture group: the
+    field is lost, which is visible, rather than the pattern silently becoming
+    something else, which is not.
+    """
+    return name if isinstance(name, str) and _GROUP_NAME.match(name) else ""
+
+
+def safe_count(value, default: int = 0) -> int:
+    """A repetition count from a file, coerced and bounded."""
+    try:
+        n = int(value)
+    except (TypeError, ValueError):
+        return default
+    return max(0, min(n, MAX_REPEAT))
+
 # --- rule kinds -------------------------------------------------------------
 #
 # FIND is the thing you are looking for. REQUIRE and EXCLUDE are conditions on
@@ -247,12 +283,12 @@ class Repeat:
         elif self.mode == SOME:
             core = "+"
         elif self.mode == EXACT:
-            core = "{%d}" % max(0, self.minimum)
+            core = "{%d}" % safe_count(self.minimum)
         elif self.mode == AT_LEAST:
-            core = "{%d,}" % max(0, self.minimum)
+            core = "{%d,}" % safe_count(self.minimum)
         elif self.mode == RANGE:
-            lo = max(0, self.minimum)
-            hi = max(lo, self.maximum)
+            lo = safe_count(self.minimum)
+            hi = max(lo, safe_count(self.maximum))
             core = "{%d,%d}" % (lo, hi)
         else:
             raise RecipeError(f"unknown repeat mode {self.mode!r}")
@@ -328,15 +364,15 @@ class Rule:
         # A pattern that already names this group captures it itself; wrapping
         # again is a redefinition error, and taking a library pattern with a
         # named group and ticking "Keep as field" would hit it every time.
-        already_named = (self.capture_name
-                         and f"(?P<{self.capture_name}>" in core)
+        name = safe_group_name(self.capture_name)
+        already_named = name and f"(?P<{name}>" in core
         capture = self.capture and not already_named
         if suffix:
             core = group(core, capturing=False) + suffix
             if capture:
-                core = group(core, capturing=True, name=self.capture_name)
+                core = group(core, capturing=True, name=name)
         elif capture:
-            core = group(core, capturing=True, name=self.capture_name)
+            core = group(core, capturing=True, name=name)
 
         # A per-rule case override becomes an inline scoped flag. Scoped flags
         # are a modern-Python / PCRE feature; flavors.py warns where they are
@@ -374,15 +410,46 @@ class Rule:
 
     @classmethod
     def from_dict(cls, data: dict) -> "Rule":
+        """Build a rule from an untrusted document.
+
+        Unknown values are refused rather than coerced quietly. A rule whose
+        `kind` is a typo used to be dropped on the floor by `of_kind` and
+        never mentioned again — silent rule loss, in a tool whose entire
+        argument is that it does not silently lose rules.
+        """
         data = dict(data)
         rep = data.pop("repeat", None) or {}
         if isinstance(rep, str):
             rep = {"mode": rep}
+        if not isinstance(rep, dict):
+            rep = {}
+
+        kind = data.get("kind", FIND)
+        if kind not in KINDS:
+            raise RecipeError(
+                f"This rule has an unknown kind, {kind!r}. "
+                f"Expected one of: {', '.join(KINDS)}.")
+        mode = rep.get("mode", ONCE)
+        if mode not in REPEATS:
+            raise RecipeError(f"This rule repeats in an unknown way, {mode!r}.")
+
         known = {f for f in cls.__dataclass_fields__ if f != "repeat"}
         clean = {k: v for k, v in data.items() if k in known}
-        return cls(repeat=Repeat(**{k: v for k, v in rep.items()
-                                    if k in Repeat.__dataclass_fields__}),
-                   **clean)
+        for flag in ("literal", "whole_word", "capture", "enabled"):
+            if flag in clean:
+                clean[flag] = bool(clean[flag])
+        if "ignore_case" in clean and clean["ignore_case"] is not None:
+            clean["ignore_case"] = bool(clean["ignore_case"])
+        for text in ("pattern", "label", "capture_name", "note", "source"):
+            if text in clean and not isinstance(clean[text], str):
+                clean[text] = str(clean[text])
+
+        repeat = Repeat(
+            mode=mode,
+            minimum=safe_count(rep.get("minimum", 1), 1),
+            maximum=safe_count(rep.get("maximum", 1), 1),
+            greedy=bool(rep.get("greedy", True)))
+        return cls(repeat=repeat, **clean)
 
 
 def _word_edge(fragment: str, *, start: bool) -> bool:
@@ -633,10 +700,32 @@ class Recipe:
         if not isinstance(schema, int) or schema > SCHEMA:
             raise RecipeError(
                 f"This pattern was written by a newer Sieve (format {schema}).")
-        rules = [Rule.from_dict(r) for r in data.get("rules", [])
-                 if isinstance(r, dict)]
+        raw = data.get("rules", [])
+        if not isinstance(raw, list):
+            raise RecipeError("The 'rules' field should be a list.")
+        rules = []
+        for index, entry in enumerate(raw, start=1):
+            if not isinstance(entry, dict):
+                raise RecipeError(f"Rule {index} is not an object.")
+            try:
+                rules.append(Rule.from_dict(entry))
+            except RecipeError as exc:
+                raise RecipeError(f"Rule {index}: {exc}") from exc
+
         known = {f for f in cls.__dataclass_fields__ if f != "rules"}
         clean = {k: v for k, v in data.items() if k in known}
+        join = clean.get("join", JOIN_SEQUENCE)
+        if join not in JOINS:
+            raise RecipeError(
+                f"This pattern joins its Find rules in an unknown way, "
+                f"{join!r}. Expected one of: {', '.join(JOINS)}.")
+        for flag in ("ignore_case", "dot_matches_newline", "multiline",
+                     "anchor_start", "anchor_end"):
+            if flag in clean:
+                clean[flag] = bool(clean[flag])
+        for text in ("name", "intent"):
+            if text in clean and not isinstance(clean[text], str):
+                clean[text] = str(clean[text])
         return cls(rules=rules, **clean)
 
     @classmethod

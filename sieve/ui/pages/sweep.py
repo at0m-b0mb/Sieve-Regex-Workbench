@@ -120,7 +120,12 @@ class SweepPage(QWidget):
         results = Card("What it found")
         self.summary = label("Nothing swept yet.", wrap=True)
         self.results_badge = Badge("idle", "neutral", self.mode)
-        results.add_layout(row(self.summary, None, self.results_badge))
+        results.add_layout(row(self.results_badge, None))
+        results.add(self.summary)
+        # What this result cannot tell you, said plainly. A sweep that read
+        # part of a tree and a sweep that read all of it must not look alike.
+        self.caveat = label("", wrap=True)
+        results.add(self.caveat)
 
         self.tree = QTreeWidget()
         self.tree.setHeaderLabels(["File and line", "Text"])
@@ -206,13 +211,23 @@ class SweepPage(QWidget):
 
     def _on_done(self, result: scanner.ScanResult) -> None:
         self.result = result
-        self.summary.setText(result.summary())
+        text = result.summary()
         if result.errors:
-            self.summary.setText(result.summary() + "  ·  "
-                                 + f"{len(result.errors)} unreadable")
-        self.results_badge.set_tone(
-            "pass" if result.hits else "neutral",
-            f"{len(result.hits)} hits" if result.hits else "no hits")
+            text += f"  ·  {len(result.errors)} unreadable"
+        self.summary.setText(text)
+
+        caveat = result.caveat()
+        self.caveat.setText(caveat)
+        self.caveat.setStyleSheet(
+            f"color: {theme.color('warn', self.mode)};"
+            f"{theme.font_css('small')}" if caveat else "")
+
+        if not result.hits:
+            self.results_badge.set_tone("neutral", "no hits")
+        elif result.complete:
+            self.results_badge.set_tone("pass", f"{result.hits_total:,} hits")
+        else:
+            self.results_badge.set_tone("warn", f"{result.hits_total:,} hits, partial")
         self._repaint_results()
 
     def _repaint_results(self) -> None:

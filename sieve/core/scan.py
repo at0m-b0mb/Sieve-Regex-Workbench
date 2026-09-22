@@ -66,6 +66,11 @@ class ScanResult:
     seconds: float = 0.0
     errors: list[str] = field(default_factory=list)
     stopped_early: bool = False
+    # Every hit found, including the ones past the storage cap. Stopping the
+    # whole sweep at 5,000 hits meant a 400-file tree reported "59 files" and
+    # left you believing that was the shape of it. Counting continues; only
+    # the stored detail is bounded.
+    hits_total: int = 0
     # (path, reason) for every file not read in full. Without this a truncated
     # 250,000-line log and a genuinely clean one produce the same "0 hits"
     # summary, which is a clean bill of health the scan never earned.
@@ -74,11 +79,21 @@ class ScanResult:
     @property
     def complete(self) -> bool:
         """True only when every file was read all the way through."""
-        return not self.partial and not self.stopped_early and not self.errors
+        return (not self.partial and not self.stopped_early
+                and not self.errors and not self.truncated_detail)
+
+    @property
+    def truncated_detail(self) -> bool:
+        """More hits were found than are listed."""
+        return self.hits_total > len(self.hits)
 
     def summary(self) -> str:
         files = f"{self.files_read} file{'s' if self.files_read != 1 else ''}"
-        hits = f"{len(self.hits)} hit{'s' if len(self.hits) != 1 else ''}"
+        if self.truncated_detail:
+            hits = f"{len(self.hits):,} of {self.hits_total:,} hits listed"
+        else:
+            total = len(self.hits)
+            hits = f"{total:,} hit{'s' if total != 1 else ''}"
         base = (f"{hits} in {files} · {self.lines_read:,} lines · "
                 f"{self.seconds:.2f}s")
         if self.files_skipped:
@@ -94,6 +109,9 @@ class ScanResult:
         if self.complete:
             return ""
         bits = []
+        if self.truncated_detail:
+            bits.append(f"only the first {len(self.hits):,} of "
+                        f"{self.hits_total:,} hits are listed")
         if self.partial:
             bits.append(f"{len(self.partial)} file"
                         f"{'s were' if len(self.partial) != 1 else ' was'} "
@@ -102,8 +120,9 @@ class ScanResult:
             bits.append("the sweep stopped at its limit")
         if self.errors:
             bits.append(f"{len(self.errors)} could not be read")
-        return ("No hits does not mean nothing is there: "
-                + ", and ".join(bits) + ".")
+        lead = ("This result is partial: " if self.hits
+                else "No hits does not mean nothing is there: ")
+        return lead + ", and ".join(bits) + "."
 
     def by_file(self) -> dict[str, list[Hit]]:
         out: dict[str, list[Hit]] = {}
@@ -113,11 +132,15 @@ class ScanResult:
 
 
 def looks_binary(path: Path) -> bool:
-    try:
-        with open(path, "rb") as handle:
-            chunk = handle.read(BINARY_SNIFF)
-    except OSError:
-        return True
+    """True when the first few KB contain a null byte.
+
+    Raises OSError if the file cannot be read. It used to swallow that and
+    answer "binary", so a file you had no permission to open was reported
+    exactly like one that was fine — the same dishonesty as counting a
+    truncated read as a complete one.
+    """
+    with open(path, "rb") as handle:
+        chunk = handle.read(BINARY_SNIFF)
     return b"\x00" in chunk
 
 
@@ -205,16 +228,16 @@ def scan(recipe: Recipe, paths, *, include: str = "",
         for line in lines:
             if not line.kept:
                 continue
-            i = line.number - 1
-            hit = Hit(str(path), line.number, line.text, line.spans, line.groups,
-                      [l.text for l in lines[max(0, i - context):i]] if context else [],
-                      [l.text for l in lines[i + 1:i + 1 + context]] if context else [])
-            result.hits.append(hit)
+            result.hits_total += 1
+            # Past the cap we keep counting but stop keeping. The sweep runs
+            # to the end either way, so the file and hit totals are real.
             if len(result.hits) >= max_hits:
-                result.stopped_early = True
-                break
-        if result.stopped_early:
-            break
+                continue
+            i = line.number - 1
+            result.hits.append(Hit(
+                str(path), line.number, line.text, line.spans, line.groups,
+                [l.text for l in lines[max(0, i - context):i]] if context else [],
+                [l.text for l in lines[i + 1:i + 1 + context]] if context else []))
 
     result.seconds = time.perf_counter() - started
     return result
@@ -261,6 +284,8 @@ def to_json(result: ScanResult, *, redact: bool = False) -> str:
         "files_read": result.files_read,
         "files_skipped": result.files_skipped,
         "lines_read": result.lines_read,
+        "hits_found": result.hits_total,
+        "hits_listed": len(result.hits),
         "seconds": round(result.seconds, 3),
         "redacted": redact,
         "complete": result.complete,

@@ -89,3 +89,41 @@ def test_exclude_rules_apply_during_a_sweep(tree):
         Rule(kind=EXCLUDE, pattern="EXAMPLX", literal=True)])
     result = scan.scan(recipe, tree)
     assert {Path(h.path).name for h in result.hits} == {"app.conf"}
+
+
+def test_the_sweep_counts_every_hit_even_past_the_storage_cap(tmp_path):
+    """It used to stop the whole sweep at the cap, so a 400-file tree
+    reported "59 files" and left you believing that was the shape of it."""
+    for i in range(12):
+        (tmp_path / f"f{i}.log").write_text("ERROR\n" * 30, encoding="utf-8")
+    recipe = Recipe(rules=[Rule(pattern="ERROR", label="an error")])
+    result = scan.scan(recipe, tmp_path, max_hits=50)
+
+    assert len(result.hits) == 50, "stored detail should be bounded"
+    assert result.hits_total == 360, "but every hit should be counted"
+    assert result.files_read == 12, "and every file should still be read"
+    assert result.truncated_detail
+    assert not result.complete
+    assert "5" in result.summary() and "360" in result.summary()
+    assert "only the first" in result.caveat()
+
+
+def test_a_complete_sweep_says_nothing_about_being_partial(tmp_path):
+    (tmp_path / "a.log").write_text("ERROR\n", encoding="utf-8")
+    recipe = Recipe(rules=[Rule(pattern="ERROR", label="an error")])
+    result = scan.scan(recipe, tmp_path)
+    assert result.complete
+    assert result.caveat() == ""
+    assert not result.truncated_detail
+
+
+def test_the_hit_count_reaches_every_report_format(tmp_path):
+    for i in range(6):
+        (tmp_path / f"f{i}.log").write_text("ERROR\n" * 20, encoding="utf-8")
+    recipe = Recipe(rules=[Rule(pattern="ERROR", label="an error")])
+    result = scan.scan(recipe, tmp_path, max_hits=10)
+    assert "only the first" in scan.to_text(result)
+    import json as _json
+    payload = _json.loads(scan.to_json(result))
+    assert payload["hits_found"] == 120 and payload["hits_listed"] == 10
+    assert payload["complete"] is False
