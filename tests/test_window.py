@@ -306,3 +306,71 @@ def test_opening_an_example_does_not_point_save_at_the_shipped_copy(window, app)
     assert window.state.recipe.rules
     assert window.state.file_path is None, "Save would overwrite the package copy"
     assert not window.state.dirty
+
+
+def test_closing_during_a_safety_probe_does_not_reach_a_deleted_worker(app, tmp_path):
+    """Quitting mid-probe used to raise RuntimeError out of the worker thread.
+
+    The page was torn down while the worker was still running, so the emit
+    landed on a deleted C++ object. Built on its own window because the point
+    is what happens when one is destroyed.
+    """
+    from sieve.ui.app import Window
+    win = Window()
+    win.show()
+    win.state.add_rule(Rule(pattern=r"^(a+)+(b+)+$", label="slow on purpose"))
+    win.show_page("safety")
+    app.processEvents()
+
+    safety = win.pages["safety"]
+    safety._pull()
+    safety.run_check()
+    app.processEvents()
+    assert safety.thread is not None and safety.thread.isRunning()
+
+    win.state._dirty = False
+    win.close()                       # closeEvent must wait for the worker
+    app.processEvents()
+    assert not safety.thread.isRunning(), "the worker outlived its page"
+    win.deleteLater()
+    app.processEvents()
+
+
+def test_closing_during_a_sweep_stops_it(app, tmp_path):
+    from sieve.ui.app import Window
+    for i in range(200):
+        (tmp_path / f"f{i}.log").write_text(
+            "noise\n" * 200 + "AKIAIOSFODNN7REALKEYS\n", encoding="utf-8")
+
+    win = Window()
+    win.show()
+    win.state.add_rule(Rule(pattern=r"AKIA[A-Z0-9]{16}", label="a key"))
+    win.show_page("sweep")
+    app.processEvents()
+
+    sweep = win.pages["sweep"]
+    sweep.path.setText(str(tmp_path))
+    sweep._start()
+    app.processEvents()
+    assert sweep.thread is not None and sweep.thread.isRunning()
+
+    win.state._dirty = False
+    win.close()
+    app.processEvents()
+    assert not sweep.thread.isRunning(), "the sweep outlived its page"
+    win.deleteLater()
+    app.processEvents()
+
+
+def test_starting_a_second_run_does_not_orphan_the_first(window, app):
+    window.state.add_rule(Rule(pattern=r"^(a+)+(b+)+$", label="slow"))
+    safety = window.pages["safety"]
+    window.show_page("safety")
+    safety._pull()
+    safety.run_check()
+    app.processEvents()
+    first = safety.thread
+    safety.run_check()                # a second click while the first runs
+    app.processEvents()
+    assert safety.thread is first, "a second thread was started underneath"
+    safety.shutdown()

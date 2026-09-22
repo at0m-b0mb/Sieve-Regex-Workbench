@@ -25,7 +25,6 @@ from dataclasses import dataclass, field
 class Flavor:
     id: str
     title: str
-    engine: str
     lookahead: bool = True
     lookbehind: bool = True
     variable_lookbehind: bool = False
@@ -48,59 +47,51 @@ class Flavor:
 
 FLAVORS: dict[str, Flavor] = {
     "python": Flavor(
-        "python", "Python re", "backtracking",
-        variable_lookbehind=False, named_syntax="(?P<name>…)",
+        "python", "Python re", variable_lookbehind=False, named_syntax="(?P<name>…)",
         atomic_groups=True, possessive=True, unicode_props=False,
         scoped_flags=True,
         note="Atomic groups and possessive quantifiers need Python 3.11+.",
     ),
     "pcre": Flavor(
-        "pcre", "PCRE2 (grep -P, PHP, nginx)", "backtracking",
-        variable_lookbehind=False, named_syntax="(?P<name>…) or (?<name>…)",
+        "pcre", "PCRE2 (grep -P, PHP, nginx)", variable_lookbehind=False, named_syntax="(?P<name>…) or (?<name>…)",
         atomic_groups=True, possessive=True, unicode_props=True,
         scoped_flags=True,
         note="The most featureful engine here, and the easiest to write a "
              "catastrophic pattern in.",
     ),
     "re2": Flavor(
-        "re2", "RE2 (Go, ripgrep, CloudFlare)", "automaton",
-        lookahead=False, lookbehind=False, backrefs=False,
+        "re2", "RE2 (Go, ripgrep, CloudFlare)", lookahead=False, lookbehind=False, backrefs=False,
         named_syntax="(?P<name>…)", unicode_props=True, scoped_flags=True,
         linear_time=True,
         note="Runs in guaranteed linear time, and pays for it by dropping "
              "lookaround and backreferences entirely.",
     ),
     "javascript": Flavor(
-        "javascript", "JavaScript (ES2018+)", "backtracking",
-        variable_lookbehind=True, named_syntax="(?<name>…)",
+        "javascript", "JavaScript (ES2018+)", variable_lookbehind=True, named_syntax="(?<name>…)",
         unicode_props=True, scoped_flags=False,
         note="Lookbehind needs ES2018 — Safari only shipped it in 16.4. "
              "Inline flags like (?i) are not supported at all.",
     ),
     "java": Flavor(
-        "java", "Java", "backtracking",
-        variable_lookbehind=False, named_syntax="(?<name>…)",
+        "java", "Java", variable_lookbehind=False, named_syntax="(?<name>…)",
         atomic_groups=True, possessive=True, unicode_props=True,
         scoped_flags=True,
         note="Bounded-width lookbehind only: {0,20} is fine, + is not.",
     ),
     "dotnet": Flavor(
-        "dotnet", ".NET", "backtracking",
-        variable_lookbehind=True, named_syntax="(?<name>…)",
+        "dotnet", ".NET", variable_lookbehind=True, named_syntax="(?<name>…)",
         atomic_groups=True, possessive=False, unicode_props=True,
         scoped_flags=True,
         note="The only common engine with true variable-length lookbehind.",
     ),
     "rust": Flavor(
-        "rust", "Rust regex crate", "automaton",
-        lookahead=False, lookbehind=False, backrefs=False,
+        "rust", "Rust regex crate", lookahead=False, lookbehind=False, backrefs=False,
         named_syntax="(?P<name>…)", unicode_props=True, scoped_flags=True,
         linear_time=True,
         note="RE2's design in Rust. Same guarantees, same omissions.",
     ),
     "posix_ere": Flavor(
-        "posix_ere", "POSIX ERE (grep -E, awk)", "automaton",
-        lookahead=False, lookbehind=False, backrefs=False,
+        "posix_ere", "POSIX ERE (grep -E, awk)", lookahead=False, lookbehind=False, backrefs=False,
         named_groups=False, named_syntax="not supported",
         non_capturing=False,
         shorthand_classes=False, word_boundary=False, lazy=False,
@@ -109,8 +100,7 @@ FLAVORS: dict[str, Flavor] = {
              "[[:alnum:]_] instead.",
     ),
     "posix_bre": Flavor(
-        "posix_bre", "POSIX BRE (grep, sed)", "automaton",
-        lookahead=False, lookbehind=False,
+        "posix_bre", "POSIX BRE (grep, sed)", lookahead=False, lookbehind=False,
         named_groups=False, named_syntax="not supported",
         non_capturing=False,
         shorthand_classes=False, word_boundary=False, lazy=False,

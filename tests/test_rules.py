@@ -121,3 +121,40 @@ def test_description_reads_as_english():
     text = " ".join(recipe.describe())
     assert "Find a failure" in text
     assert "Never when the line contains our test traffic" in text
+
+
+@pytest.mark.parametrize("fragment", [
+    "([a", "(a[b", "(?:[x", "((", "(?P<n>[a", "(\\", "[", "([", "[^", "(?:",
+])
+def test_half_typed_patterns_do_not_crash_the_parser(fragment):
+    """These are not exotic inputs.
+
+    `([a` is the state you pass through while typing `([a-z]+)`, and the
+    Build page re-parses on every keystroke. Reading one character past the
+    end of a partial character class used to raise IndexError straight out of
+    the live validator.
+    """
+    from sieve.core.rules import _atoms
+    _atoms(fragment)          # must not raise
+
+
+def test_every_prefix_of_every_library_pattern_parses():
+    """Each prefix is a state someone types through. None may raise."""
+    from sieve.core.library import ENTRIES
+    from sieve.core.rules import _atoms, _needs_group, _has_top_alternation
+    for entry in ENTRIES:
+        for cut in range(len(entry.pattern) + 1):
+            prefix = entry.pattern[:cut]
+            _atoms(prefix)
+            _needs_group(prefix)
+            _has_top_alternation(prefix)
+
+
+def test_an_unparseable_fragment_is_wrapped_rather_than_trusted():
+    """When the parser gives up it returns [], and everything downstream must
+    read that as "I do not understand this — group it" rather than as "this is
+    a single safe atom"."""
+    from sieve.core.rules import _needs_group, _has_top_alternation
+    for fragment in ("([a", "((", "(?:[x"):
+        assert _needs_group(fragment) is True
+        assert _has_top_alternation(fragment) is True

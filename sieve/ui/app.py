@@ -400,11 +400,19 @@ class Window(QMainWindow):
                 pass
 
     def closeEvent(self, event) -> None:
-        if self._confirm_discard():
-            self.state.settings.setValue("geometry", self.saveGeometry())
-            event.accept()
-        else:
+        if not self._confirm_discard():
             event.ignore()
+            return
+        # Let any worker finish before the pages it reports into are torn
+        # down. Without this, quitting during a Safety probe or a Sweep
+        # deletes the worker underneath the thread still running it, and the
+        # emit lands on a deleted C++ object.
+        for page in self.pages.values():
+            shutdown = getattr(page, "shutdown", None)
+            if callable(shutdown):
+                shutdown()
+        self.state.settings.setValue("geometry", self.saveGeometry())
+        event.accept()
 
 
 def main(argv: list[str] | None = None) -> int:

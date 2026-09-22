@@ -120,16 +120,28 @@ def _atoms(fragment: str) -> list[tuple[str, str]]:
         elif ch == "(":
             depth = 0
             while i < n:
-                if fragment[i] == "\\":
+                here = fragment[i]
+                if here == "\\":
                     i += 2
                     continue
-                if fragment[i] == "[":
+                if here == "[":
+                    # Skip the character class wholesale. Every step needs its
+                    # own bound: `([a` is not exotic input, it is the state
+                    # you pass through while typing `([a-z]+)`, and reading
+                    # one character past the end of it used to raise
+                    # IndexError out of the Build page's live validator.
                     i += 1
+                    if i < n and fragment[i] == "^":
+                        i += 1
+                    if i < n and fragment[i] == "]":
+                        i += 1          # a leading ] is a literal
                     while i < n and fragment[i] != "]":
                         i += 2 if fragment[i] == "\\" else 1
-                if fragment[i] == "(":
+                    i = min(i + 1, n)
+                    continue
+                if here == "(":
                     depth += 1
-                elif fragment[i] == ")":
+                elif here == ")":
                     depth -= 1
                     if depth == 0:
                         i += 1

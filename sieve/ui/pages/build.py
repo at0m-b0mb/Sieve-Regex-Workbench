@@ -265,16 +265,35 @@ class RuleCard(QFrame):
     def _validate(self) -> None:
         import re
         if not self.rule.pattern.strip() or self.rule.literal:
-            self.error.setVisible(False)
+            self._clear_error()
             return
         try:
             re.compile(self.rule.fragment())
-            self.error.setVisible(False)
+            self._clear_error()
         except re.error as exc:
             self.error.setText(R._friendly_re_error(exc, self.rule.pattern))
+        except Exception as exc:                 # noqa: BLE001 — see below
+            # Defence in depth. This runs on every keystroke against text that
+            # is, by definition, half-written, and a raw traceback out of a
+            # live validator would take the window with it. Anything the
+            # parser did not anticipate is still just an invalid pattern.
+            self.error.setText(f"Sieve cannot read this pattern yet ({exc}).")
             self.error.setStyleSheet(f"color: {theme.color('fail', self.mode)};"
                                      f"{theme.font_css('small')}")
             self.error.setVisible(True)
+            self.error.setStyleSheet(f"color: {theme.color('fail', self.mode)};"
+                                     f"{theme.font_css('small')}")
+            self.error.setVisible(True)
+
+    def _clear_error(self) -> None:
+        """Hide the message AND forget it.
+
+        Hiding alone left the last complaint sitting in the label, so the
+        widget's state described history rather than the pattern in front of
+        it — invisible to the eye, and a trap for anything that reads it.
+        """
+        self.error.setText("")
+        self.error.setVisible(False)
 
     def apply_mode(self, mode: str) -> None:
         self.mode = mode

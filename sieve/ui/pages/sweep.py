@@ -36,11 +36,18 @@ class _Worker(QObject):
         self.include = include
         self.context = context
         self._stop = False
+        self._shutting_down = False
 
     def stop(self) -> None:
         self._stop = True
 
+    def abandon(self) -> None:
+        """Stop, and do not report back — the page will not be there."""
+        self._stop = True
+        self._shutting_down = True
+
     def run(self) -> None:
+        result = None
         try:
             result = scanner.scan(
                 self.recipe, self.paths, include=self.include,
@@ -49,6 +56,8 @@ class _Worker(QObject):
                 on_progress=lambda d, t, p: self.progress.emit(d, t, p))
         except Exception as exc:
             result = scanner.ScanResult(errors=[str(exc)])
+        if self._stop and self._shutting_down:
+            return          # the page is going away; do not reach into it
         self.done.emit(result)
 
 
@@ -259,6 +268,21 @@ class SweepPage(QWidget):
         self.state.status(
             f"Saved {len(self.result.hits)} hits to {path}"
             + (" (redacted)" if redact else ""), "pass")
+
+    def shutdown(self) -> None:
+        """Stop a sweep in progress before this page is destroyed.
+
+        The scan checks its stop flag between files, so this returns quickly
+        even mid-tree.
+        """
+        if self.thread is None or not self.thread.isRunning():
+            return
+        if self.worker is not None:
+            self.worker.abandon()
+        self.thread.quit()
+        if not self.thread.wait(5000):
+            self.thread.terminate()
+            self.thread.wait(1000)
 
     def apply_mode(self, mode: str) -> None:
         self.mode = mode

@@ -37,12 +37,18 @@ class _Worker(QObject):
         super().__init__()
         self.pattern = pattern
         self.flags = flags
+        self.cancelled = False
 
     def run(self) -> None:
         try:
             verdict = redos.analyse(self.pattern, self.flags, measure=True)
         except Exception as exc:                     # never kill the thread
             verdict = redos.Verdict(redos.UNKNOWN, checked=[str(exc)])
+        if self.cancelled:
+            # The window is going away. Emitting into a page that is being
+            # torn down reaches a deleted C++ object and raises out of a
+            # thread nobody is catching on.
+            return
         self.done.emit(verdict)
 
 
@@ -191,6 +197,22 @@ class SafetyPage(QWidget):
         self.fixes.setText("\n".join("· " + t for t in
                                      redos.safer_rewrite(self.pattern.toPlainText())))
         self.checked.setText(", ".join(verdict.checked) + ".")
+
+    def shutdown(self) -> None:
+        """Let a running probe finish before this page is destroyed.
+
+        The probe is bounded to a couple of seconds and cannot be interrupted
+        mid-regex, so the only safe thing is to wait for it. Closing the
+        window without waiting deletes the worker underneath the thread that
+        is still using it.
+        """
+        if self.thread is None or not self.thread.isRunning():
+            return
+        self.worker.cancelled = True
+        self.thread.quit()
+        if not self.thread.wait(5000):
+            self.thread.terminate()
+            self.thread.wait(1000)
 
     def apply_mode(self, mode: str) -> None:
         self.mode = mode

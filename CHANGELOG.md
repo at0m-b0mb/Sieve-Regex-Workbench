@@ -40,6 +40,20 @@ emits. Everything below follows from taking that seriously.
   GUI thread, and a regex holds the GIL. A pattern with a catastrophic shape is
   no longer run automatically; the page says why and offers to run it once.
 
+- **Quitting during a Safety probe or a Sweep crashed.** The window tore down
+  while the worker thread was still running, so the result landed on a deleted
+  C++ object: `RuntimeError: wrapped C/C++ object of type _Worker has been
+  deleted`. Closing now waits for a running worker; a sweep is asked to stop
+  first and returns between files.
+- **A half-typed pattern crashed the live validator.** `([a` is not exotic
+  input — it is the state you pass through while typing `([a-z]+)`, and the
+  Build page re-parses on every keystroke. Reading one character past the end
+  of a partial character class raised `IndexError`. Every prefix of every
+  library pattern is now a test case.
+- The rule error label hid its message when a pattern became valid but never
+  cleared it, so the widget described history rather than the pattern in front
+  of it.
+
 ### Fixed — the library
 
 Thirteen confirmed misses, each now covered by a proof case:
