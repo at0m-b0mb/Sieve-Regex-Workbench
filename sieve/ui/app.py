@@ -15,14 +15,14 @@ from pathlib import Path
 from PyQt6.QtCore import Qt, QTimer
 from PyQt6.QtGui import QAction, QKeySequence
 from PyQt6.QtWidgets import (QApplication, QButtonGroup, QFileDialog, QFrame,
-                             QHBoxLayout, QLabel, QMainWindow, QMessageBox,
+                             QHBoxLayout, QMainWindow, QMessageBox,
                              QPushButton, QStackedWidget, QVBoxLayout, QWidget)
 
 from ..core.rules import RecipeError
 from . import theme
 from .marks import SieveMark, mark_pixmap
 from .state import AppState
-from .widgets import Badge, QuietButton, hairline, label, overline, row
+from .widgets import QuietButton, hairline, label
 from .pages.about import AboutPage
 from .pages.build import BuildPage
 from .pages.library import LibraryPage
@@ -34,7 +34,7 @@ from .pages.sweep import SweepPage
 
 APP_NAME = "Sieve"
 TAGLINE = "REGEX WORKBENCH"
-VERSION = "1.0.0"
+VERSION = "1.1.0"
 
 # (group heading, [(page key, label)])
 NAV = [

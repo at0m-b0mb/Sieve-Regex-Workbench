@@ -16,7 +16,7 @@ part an analyst needs before pasting it into a SIEM.
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 
 @dataclass(frozen=True)
@@ -77,6 +77,11 @@ _SP = r"(?:[\s+]|%20)"
 # character is a digit, so \b never fires. A letter-lookbehind still refuses
 # "reunion" while accepting "%20UNION".
 _WORD = r"(?<![A-Za-z])"
+
+# Card numbers are written "4111 1111 1111 1111" at least as often as they are
+# written as sixteen bare digits, and a redaction pass that only finds the bare
+# form leaves the readable one on the page.
+_CS = r"[ -]?"
 
 # Assembled from pieces rather than written as one literal.
 #
@@ -298,13 +303,15 @@ ENTRIES: list[Entry] = [
         id="bearer",
         title="Authorization header value",
         family=SECRETS,
-        pattern=r"\bauthorization\s*:\s*(?:bearer|basic|token|apikey)\s+\S{8,}",
+        pattern=r"(?<![\w-])[\"']?authorization[\"']?\s*[:=]\s*[\"']?"
+                r"(?:bearer|basic|token|apikey)\s+\S{8,}",
         ignore_case=True,
         summary="A whole Authorization header, whichever scheme it uses.",
         caveat="Basic auth is base64, not encryption — the credential is one "
                "decode away. Redact these before sharing a capture.",
         matches=("Authorization: Bearer eyJhbGciOi.abc.def",
-                 "authorization: Basic dXNlcjpwYXNzd29yZA=="),
+                 "authorization: Basic dXNlcjpwYXNzd29yZA==",
+                 '"authorization": "Bearer eyJhbGciOi.abc.def"'),
         avoids=("Authorization: Bearer",),
         tags=("header", "auth", "http"),
     ),
@@ -375,6 +382,19 @@ ENTRIES: list[Entry] = [
         matches=("e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",),
         avoids=("e3b0c44298fc1c149afbf4c8996fb924",),
         tags=("hash", "ioc", "digest"),
+    ),
+    Entry(
+        id="sha1",
+        title="SHA-1 digest",
+        family=CRYPTO,
+        pattern=r"\b[a-fA-F0-9]{40}\b",
+        summary="Forty hex characters on a word boundary.",
+        caveat="Also the shape of a git object ID and of any raw 20-byte "
+               "value written in hex. It is the hash most vendor IOC feeds "
+               "publish under, which is the reason to look for it.",
+        matches=("da39a3ee5e6b4b0d3255bfef95601890afd80709",),
+        avoids=("da39a3ee5e6b4b0d3255bfef95601890afd807",),
+        tags=("hash", "ioc", "digest", "git"),
     ),
     Entry(
         id="ssh_pubkey",
@@ -484,9 +504,11 @@ ENTRIES: list[Entry] = [
         id="sqli_probe",
         title="SQL injection probe",
         family=WEB,
-        pattern=rf"(?:'{_SP}*(?:or|and){_SP}*'?\d+'?{_SP}*={_SP}*'?\d+"
+        pattern=rf"(?:'{_SP}*(?:or|and){_SP}*(?:'[^']{{1,24}}'?|\d+)"
+                rf"{_SP}*={_SP}*(?:'[^']{{1,24}}'?|\d+)"
+                rf"|{_WORD}(?:or|and){_SP}+(?:'[^']{{1,24}}'?|\d+)"
+                rf"{_SP}*={_SP}*(?:'[^']{{1,24}}'?|\d+)"
                 rf"|{_WORD}union{_SP}+(?:all{_SP}+)?select\b"
-                rf"|{_WORD}or{_SP}+1{_SP}*={_SP}*1\b"
                 rf"|;{_SP}*(?:drop|truncate){_SP}+table\b"
                 rf"|{_WORD}sleep{_SP}*\({_SP}*\d+{_SP}*\)"
                 rf"|{_WORD}waitfor{_SP}+delay\b"
@@ -500,8 +522,10 @@ ENTRIES: list[Entry] = [
         matches=("id=1' OR '1'='1", "?q=1 UNION ALL SELECT null,null--",
                  "?q=1+UNION+ALL+SELECT+null,null--",
                  "?q=1%20UNION%20SELECT%20null",
-                 "'; DROP TABLE users;--", "id=1 AND sleep(5)"),
-        avoids=("SELECT name FROM users WHERE id = ?",),
+                 "'; DROP TABLE users;--", "id=1 AND sleep(5)",
+                 "admin' or 'x'='x", "' OR 'a'='a", "1 AND 1=1", "1 or 2=2"),
+        avoids=("SELECT name FROM users WHERE id = ?",
+                "the command line and the operand",),
         tags=("sqli", "payload", "waf"),
     ),
     Entry(
@@ -523,13 +547,16 @@ ENTRIES: list[Entry] = [
         id="traversal",
         title="Path traversal",
         family=WEB,
-        pattern=r"(?:\.\.[/\\]|%2e%2e(?:%2f|%5c)|\.\.%2f|%252e%252e)",
+        pattern=r"(?:\.|%2e|%252e){2}(?:[/\\]|%2f|%5c|%252f|%255c)",
         ignore_case=True,
-        summary="Dot-dot-slash and its single and double URL encodings.",
-        caveat="Covers common encodings only. Unicode and overlong UTF-8 "
-               "forms exist and are not here.",
+        summary="Two dots then a separator, with each half independently "
+                "literal, URL-encoded or double-encoded.",
+        caveat="A product of the two halves, so mixed forms like %2e%2e/ are "
+               "covered too. Unicode and overlong UTF-8 forms exist and are "
+               "not here.",
         matches=("GET /../../etc/passwd", "file=%2e%2e%2f%2e%2e%2fetc",
-                 "..%2f..%2fwindows"),
+                 "..%2f..%2fwindows", "%2e%2e/etc/passwd", "..%252fetc",
+                 "%2e%2e%5cwindows"),
         avoids=("/var/log/app.log", "version 1..2"),
         tags=("lfi", "traversal", "path"),
     ),
@@ -605,13 +632,16 @@ ENTRIES: list[Entry] = [
         title="Executable or script attachment",
         family=FILES,
         pattern=r"\b[\w.() -]{1,80}\.(?:exe|dll|scr|pif|com|bat|cmd|ps1|vbs"
-                r"|js|jse|wsf|hta|jar|lnk|iso|img|vhd|msi|msix|one|chm)\b",
+                r"|vbe|js|jse|wsf|wsh|hta|jar|lnk|iso|img|vhd|vhdx|msi|msix"
+                r"|appx|one|chm|cpl|scf|url|reg|xll"
+                r"|docm|dotm|xlsm|xltm|xlam|pptm|potm|ppam)\b",
         ignore_case=True,
         summary="The file types that arrive in mail and should not.",
         caveat="Double extensions (invoice.pdf.exe) match on the real one, "
                "which is right — but the display name may hide it from a user.",
-        matches=("invoice.pdf.exe", "setup.msi", "payload.hta"),
-        avoids=("report.pdf", "photo.jpg"),
+        matches=("invoice.pdf.exe", "setup.msi", "payload.hta",
+                 "quarterly-report.docm", "addin.xll", "shortcut.lnk"),
+        avoids=("report.pdf", "photo.jpg", "notes.docx"),
         tags=("attachment", "phishing", "malware"),
     ),
 
@@ -634,17 +664,20 @@ ENTRIES: list[Entry] = [
         id="powershell_encoded",
         title="Encoded PowerShell command",
         family=WINDOWS,
-        pattern=r"(?:powershell|pwsh)(?:\.exe)?[^\n]{0,200}?"
+        pattern=r"(?:powershell|pwsh)(?:\.exe)?[^\n]{0,600}?"
                 r"-(?:e|en|enc|enco|encod|encode|encoded|encodedc|encodedco|"
                 r"encodedcom|encodedcomm|encodedcomma|encodedcomman|"
-                r"encodedcommand)\b\s+[A-Za-z0-9+/=]{20,}",
+                r"encodedcommand)\b\s+[\"']?[A-Za-z0-9+/=]{20,}",
         ignore_case=True,
         summary="powershell -enc with a base64 payload, matching every legal "
                 "abbreviation of the switch.",
         caveat="PowerShell accepts any unambiguous prefix, which is why the "
-               "alternation is long. Case and whitespace vary too.",
+               "alternation is long. Case and whitespace vary too. The "
+               "switch must fall within 600 characters of the binary name.",
         matches=("powershell.exe -NoP -W hidden -enc SQBFAFgAIAAoAE4AZQB3AC0A",
-                 "pwsh -encodedcommand SQBFAFgAIAAoAE4AZQB3AC0A"),
+                 "pwsh -encodedcommand SQBFAFgAIAAoAE4AZQB3AC0A",
+                 "powershell.exe " + "-NoProfile " * 22
+                 + "-EncodedCommand SQBFAFgAIAAoAE4AZQB3AC0A"),
         avoids=("powershell -File script.ps1",),
         tags=("powershell", "lolbin", "execution"),
     ),
@@ -668,13 +701,14 @@ ENTRIES: list[Entry] = [
         id="event_id",
         title="Windows event ID",
         family=WINDOWS,
-        pattern=r"\bEvent\s*ID\s*[:=]?\s*(\d{1,5})\b",
+        pattern=r"\bEvent[\s_]*(?:ID|Code)[\"']?\s*[:=>]?\s*[\"']?(\d{1,5})\b",
         ignore_case=True,
         summary="A labelled event ID as written in exported logs and reports.",
         caveat="Event IDs are only unique within a channel — 4624 in Security "
                "is a logon, 4624 elsewhere is something else entirely.",
-        matches=("Event ID: 4625", "EventID=1102"),
-        avoids=("Event 4625",),
+        matches=("Event ID: 4625", "EventID=1102", "<EventID>4625</EventID>",
+                 '"EventID": 4625', '"EventCode":"4625"'),
+        avoids=("Event 4625", "Eventual 4625"),
         tags=("evtx", "eventlog", "audit"),
     ),
     Entry(
@@ -784,14 +818,24 @@ ENTRIES: list[Entry] = [
         id="credit_card",
         title="Payment card number",
         family=PII,
-        pattern=r"\b(?:4\d{12}(?:\d{3})?|5[1-5]\d{14}|3[47]\d{13}"
-                r"|6(?:011|5\d{2})\d{12}|3(?:0[0-5]|[68]\d)\d{11})\b",
-        summary="Visa, Mastercard, Amex, Discover and Diners prefixes at the "
-                "right lengths.",
+        pattern=rf"(?<![\d-])(?:"
+                rf"4\d{{3}}{_CS}\d{{4}}{_CS}\d{{4}}{_CS}\d{{4}}"
+                rf"|4\d{{12}}"
+                rf"|(?:5[1-5]\d{{2}}|222[1-9]|22[3-9]\d|2[3-6]\d\d|27[01]\d|2720)"
+                rf"{_CS}\d{{4}}{_CS}\d{{4}}{_CS}\d{{4}}"
+                rf"|3[47]\d{{2}}{_CS}\d{{6}}{_CS}\d{{5}}"
+                rf"|6(?:011|5\d{{2}}){_CS}\d{{4}}{_CS}\d{{4}}{_CS}\d{{4}}"
+                rf"|3(?:0[0-5]|[68]\d)\d{{11}}"
+                rf")(?![\d-])",
+        summary="Visa, Mastercard (both BIN ranges), Amex, Discover and Diners, "
+                "written bare or in groups of four.",
         caveat="Does not run the Luhn check, so a fraction of hits are not "
-               "valid card numbers. Sieve's scanner can redact these for you.",
-        matches=("4111111111111111", "5500005555555559", "378282246310005"),
-        avoids=("1234567812345678", "411111111111111"),
+               "valid card numbers. Uses lookaround, so RE2 and POSIX grep "
+               "cannot run it. Sieve's scanner can redact these for you.",
+        matches=("4111111111111111", "5500005555555559", "378282246310005",
+                 "2223003122003222", "2720990000000000",
+                 "4111 1111 1111 1111", "5500-0055-5555-5559"),
+        avoids=("1234567812345678", "411111111111111", "1234 5678 1234 5678"),
         tags=("pci", "pan", "redact"),
     ),
     Entry(
@@ -877,13 +921,6 @@ ENTRIES: list[Entry] = [
 ]
 
 BY_ID = {e.id: e for e in ENTRIES}
-
-
-def by_family() -> dict[str, list[Entry]]:
-    out: dict[str, list[Entry]] = {f: [] for f in FAMILIES}
-    for e in ENTRIES:
-        out.setdefault(e.family, []).append(e)
-    return {k: v for k, v in out.items() if v}
 
 
 def search(query: str) -> list[Entry]:

@@ -29,6 +29,9 @@ SKIP_DIRS = {".git", ".svn", "node_modules", "__pycache__", ".venv", "venv",
 
 BINARY_SNIFF = 8192
 
+# Past this, one file is read only in part — and the result says so.
+MAX_LINES_PER_FILE = 200_000
+
 
 @dataclass
 class Hit:
@@ -63,6 +66,15 @@ class ScanResult:
     seconds: float = 0.0
     errors: list[str] = field(default_factory=list)
     stopped_early: bool = False
+    # (path, reason) for every file not read in full. Without this a truncated
+    # 250,000-line log and a genuinely clean one produce the same "0 hits"
+    # summary, which is a clean bill of health the scan never earned.
+    partial: list[tuple[str, str]] = field(default_factory=list)
+
+    @property
+    def complete(self) -> bool:
+        """True only when every file was read all the way through."""
+        return not self.partial and not self.stopped_early and not self.errors
 
     def summary(self) -> str:
         files = f"{self.files_read} file{'s' if self.files_read != 1 else ''}"
@@ -73,7 +85,25 @@ class ScanResult:
             base += f" · {self.files_skipped} skipped"
         if self.stopped_early:
             base += " · stopped at the limit"
+        if self.partial:
+            base += (f" · {len(self.partial)} not read in full")
         return base
+
+    def caveat(self) -> str:
+        """One sentence naming what this result cannot tell you, or ""."""
+        if self.complete:
+            return ""
+        bits = []
+        if self.partial:
+            bits.append(f"{len(self.partial)} file"
+                        f"{'s were' if len(self.partial) != 1 else ' was'} "
+                        "not read in full")
+        if self.stopped_early:
+            bits.append("the sweep stopped at its limit")
+        if self.errors:
+            bits.append(f"{len(self.errors)} could not be read")
+        return ("No hits does not mean nothing is there: "
+                + ", and ".join(bits) + ".")
 
     def by_file(self) -> dict[str, list[Hit]]:
         out: dict[str, list[Hit]] = {}
@@ -145,8 +175,12 @@ def scan(recipe: Recipe, paths, *, include: str = "",
         if on_progress is not None:
             on_progress(index, total, str(path))
         try:
-            if path.stat().st_size > limit_bytes:
+            size = path.stat().st_size
+            if size > limit_bytes:
                 result.files_skipped += 1
+                result.partial.append(
+                    (str(path), f"{size / 1048576:.0f} MB, over the "
+                                f"{max_file_mb:.0f} MB limit — not read"))
                 continue
             if looks_binary(path):
                 result.files_skipped += 1
@@ -157,10 +191,13 @@ def scan(recipe: Recipe, paths, *, include: str = "",
             result.files_skipped += 1
             continue
 
-        run = matcher.run(recipe, text, max_lines=200000)
+        run = matcher.run(recipe, text, max_lines=MAX_LINES_PER_FILE)
         if run.error:
             result.errors.append(f"{path}: {run.error}")
             break
+        if run.truncated:
+            result.partial.append(
+                (str(path), f"read only the first {MAX_LINES_PER_FILE:,} lines"))
         result.files_read += 1
         result.lines_read += len(run.lines)
 
@@ -186,13 +223,18 @@ def scan(recipe: Recipe, paths, *, include: str = "",
 # --- reports ----------------------------------------------------------------
 
 def to_text(result: ScanResult, *, redact: bool = False) -> str:
-    out = [f"# Sieve scan — {result.summary()}", ""]
+    out = [f"# Sieve scan — {result.summary()}"]
+    if result.caveat():
+        out.append(f"# {result.caveat()}")
+    out.append("")
     for path, hits in result.by_file().items():
         out.append(path)
         for h in hits:
             body = h.redacted() if redact else h.text
             out.append(f"  {h.line_number:>6}: {body}")
         out.append("")
+    for path, reason in result.partial:
+        out.append(f"~ {path}: {reason}")
     for err in result.errors:
         out.append(f"! {err}")
     return "\n".join(out)
@@ -221,6 +263,9 @@ def to_json(result: ScanResult, *, redact: bool = False) -> str:
         "lines_read": result.lines_read,
         "seconds": round(result.seconds, 3),
         "redacted": redact,
+        "complete": result.complete,
+        "caveat": result.caveat(),
+        "partial": [{"path": p, "reason": r} for p, r in result.partial],
         "errors": result.errors,
         "hits": [
             {"path": h.path, "line": h.line_number,

@@ -10,19 +10,20 @@ change, so the cases travel with the pattern in the saved file.
 
 from __future__ import annotations
 
-from PyQt6.QtCore import Qt, QTimer, pyqtSignal
+from PyQt6.QtCore import Qt, QTimer
 from PyQt6.QtGui import QColor, QTextCursor, QTextFormat
-from PyQt6.QtWidgets import (QAbstractItemView, QComboBox, QHBoxLayout,
+from PyQt6.QtWidgets import (QAbstractItemView, QComboBox, QFileDialog,
+                             QHBoxLayout,
                              QHeaderView, QLineEdit, QPlainTextEdit,
                              QSplitter, QTableWidget, QTableWidgetItem,
                              QTextEdit, QVBoxLayout, QWidget)
 
-from ...core import matcher, samples
+from ...core import matcher, redos, samples
 from ...core.proof import Case, SHOULD_MATCH, SHOULD_NOT
 from .. import theme
 from ..marks import MapRow, MatchMap
 from ..widgets import (Badge, Card, QuietButton, caption, intro, label,
-                       overline, page_body, primary, row, scrolled, title)
+                       page_body, primary, row, scrolled, title)
 
 
 class ProofPage(QWidget):
@@ -31,6 +32,10 @@ class ProofPage(QWidget):
         self.state = state
         self.mode = mode
         self._result: matcher.RunResult | None = None
+        # Set once the user has explicitly accepted the risk for the current
+        # pattern; cleared whenever the pattern changes.
+        self._force_run = False
+        self._screened: str | None = None
 
         self._debounce = QTimer(self)
         self._debounce.setSingleShot(True)
@@ -72,7 +77,9 @@ class ProofPage(QWidget):
 
         paste = QuietButton("Paste your own")
         paste.clicked.connect(self._paste)
-        box.addLayout(row(picker, self.sample_blurb, None, paste))
+        open_file = QuietButton("Open a file")
+        open_file.clicked.connect(self._open_file)
+        box.addLayout(row(picker, self.sample_blurb, None, open_file, paste))
 
         editor_card = Card()
         editor_card.body.setContentsMargins(1, 1, 1, 1)
@@ -105,7 +112,10 @@ class ProofPage(QWidget):
         box.addLayout(legend)
         self.hint = label("", object_name="Faint")
         self.hint.setWordWrap(True)
-        box.addWidget(self.hint)
+        self.run_anyway = QuietButton("Run it anyway")
+        self.run_anyway.setVisible(False)
+        self.run_anyway.clicked.connect(self._run_anyway)
+        box.addLayout(row(self.hint, None, self.run_anyway))
         return host
 
     def _legend(self, text: str, tone: str):
@@ -193,6 +203,35 @@ class ProofPage(QWidget):
             self.state.set_sample(text, "")
             self.state.status("Pasted from the clipboard", "pass")
 
+    def _open_file(self) -> None:
+        """Load a log from disk — the evidence is usually a file.
+
+        Only the first `max_lines` go in: this page re-runs on every keystroke,
+        and a 200 MB log pasted into a text editor helps nobody. The status
+        line says when only part of the file was loaded, rather than letting
+        the corpus look complete.
+        """
+        path, _ = QFileDialog.getOpenFileName(self, "Open a log to test against")
+        if not path:
+            return
+        cap = 5000
+        try:
+            with open(path, encoding="utf-8", errors="replace") as handle:
+                lines = []
+                for i, line in enumerate(handle):
+                    if i >= cap:
+                        break
+                    lines.append(line.rstrip("\n"))
+        except OSError as exc:
+            self.state.status(f"Could not read that file: {exc.strerror}", "fail")
+            return
+        self.state.set_sample("\n".join(lines), "")
+        name = path.rsplit("/", 1)[-1]
+        self.state.status(
+            f"Loaded the first {len(lines):,} lines of {name}"
+            if len(lines) >= cap else f"Loaded {name} ({len(lines):,} lines)",
+            "pass")
+
     def _reload_sample(self) -> None:
         if self.editor.toPlainText() != self.state.sample_text:
             blocked = self.editor.blockSignals(True)
@@ -226,12 +265,45 @@ class ProofPage(QWidget):
     # -- running -------------------------------------------------------------
 
     def _run(self) -> None:
+        # matcher.run() executes on this, the GUI thread. A regex holds the
+        # GIL and cannot be interrupted, so starting a catastrophic pattern
+        # here does not make the window slow — it ends the window. Screen the
+        # shape first (the same static read the Build badge uses, which is
+        # cheap and never runs the pattern) and make the user opt in.
+        try:
+            pattern = self.state.recipe.pattern()
+        except Exception:
+            pattern = ""
+        if pattern and pattern != self._screened:
+            self._screened = pattern
+            self._force_run = False
+        if pattern and not self._force_run and redos.static_findings(pattern):
+            self._hold_back()
+            return
+        self.run_anyway.setVisible(False)
         result = matcher.run(self.state.recipe, self.editor.toPlainText())
         self._result = result
         self._paint(result)
         self._fill_fields(result)
         self._run_cases()
         self._sync_map()
+
+    def _hold_back(self) -> None:
+        """Refuse to auto-run a pattern whose shape can backtrack forever."""
+        kinds = {f.kind for f in redos.static_findings(self._screened or "")}
+        self.hint.setText(
+            "Not run automatically: this pattern contains "
+            + ", ".join(sorted(kinds))
+            + ". Against the wrong line that can take longer than the rest of "
+              "your afternoon, and it would take this window with it. Safety "
+              "will measure it; or run it here once and see.")
+        self.hint.setStyleSheet(f"color: {theme.color('warn', self.mode)};"
+                                f"{theme.font_css('small')}")
+        self.run_anyway.setVisible(True)
+
+    def _run_anyway(self) -> None:
+        self._force_run = True
+        self._run()
 
     def _paint(self, result: matcher.RunResult) -> None:
         if result.error:

@@ -14,8 +14,7 @@ from PyQt6.QtWidgets import QVBoxLayout, QWidget
 from ...core import export, library
 from .. import theme
 from ..marks import FlowChart, SieveMark
-from ..widgets import (Card, caption, hairline, intro, label, overline,
-                       page_body, row, scrolled, title)
+from ..widgets import (Card, caption, hairline, intro, label, page_body, row, scrolled, title)
 
 STAGES = [
     ("FIND",

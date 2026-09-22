@@ -19,7 +19,7 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass
 
-from PyQt6.QtCore import QPointF, QRect, QRectF, Qt, pyqtSignal
+from PyQt6.QtCore import QPointF, QRectF, Qt, pyqtSignal
 from PyQt6.QtGui import (QBrush, QColor, QFont, QFontMetrics, QPainter,
                          QPainterPath, QPen, QPixmap, QPolygonF)
 from PyQt6.QtWidgets import QSizePolicy, QWidget

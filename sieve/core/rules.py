@@ -16,7 +16,6 @@ from __future__ import annotations
 import json
 import re
 from dataclasses import dataclass, field, asdict
-from typing import Iterable
 
 SCHEMA = 1
 
@@ -410,9 +409,11 @@ def _word_edge(fragment: str, *, start: bool) -> bool:
 
 # --- the recipe -------------------------------------------------------------
 
-LINE = "line"
-BLOCK = "block"
-SCOPES = (LINE, BLOCK)
+# Guards are conditions on the line, always. Spelling them `.*` let them reach
+# across a newline as soon as dot_matches_newline was set, so the emitted regex
+# and the Proof page disagreed about the same text. `[^\n]` is immune to the
+# flag and says what is actually meant.
+LINE_RUN = "[^\\n]*"
 
 
 @dataclass
@@ -428,7 +429,6 @@ class Recipe:
     multiline: bool = True
     anchor_start: bool = False
     anchor_end: bool = False
-    scope: str = LINE
 
     # -- rule access --------------------------------------------------------
 
@@ -470,9 +470,9 @@ class Recipe:
         """REQUIRE/EXCLUDE rules as lookarounds over the line."""
         out = []
         for r in self.requires:
-            out.append(f"(?=.*{group(r.fragment())})")
+            out.append(f"(?={LINE_RUN}{group(r.fragment())})")
         for r in self.excludes:
-            out.append(f"(?!.*{group(r.fragment())})")
+            out.append(f"(?!{LINE_RUN}{group(r.fragment())})")
         return "".join(out)
 
     def pattern(self) -> str:
@@ -482,15 +482,22 @@ class Recipe:
         if not core and not guards:
             return ""
         if not core:
-            core = ".*"
-        body = core
+            core = LINE_RUN
+
+        # Wrap before anything is attached. `^passwd|shadow$` does NOT mean
+        # "the line is exactly passwd or exactly shadow" — | binds loosest, so
+        # the anchors land on one branch each and both leak. for_concat wraps
+        # only when there is a top-level alternation, so simple patterns stay
+        # readable.
+        body = for_concat(core)
+
         if guards:
             # Guards are conditions on the line, so they sit behind a line
             # anchor even when the user has not asked to anchor the match.
-            body = f"^{guards}.*?{group(core)}" if not self.anchor_start else f"^{guards}{core}"
-        else:
-            if self.anchor_start:
-                body = "^" + body
+            bridge = "" if self.anchor_start else f"{LINE_RUN}?"
+            body = f"^{guards}{bridge}{body}"
+        elif self.anchor_start:
+            body = "^" + body
         if self.anchor_end:
             body = body + "$"
         return body
@@ -525,9 +532,30 @@ class Recipe:
         except re.error as exc:
             raise RecipeError(_friendly_re_error(exc, pat)) from exc
 
-    def compile_core(self) -> re.Pattern:
-        """Just the FIND part — for highlighting inside an accepted line."""
+    def anchored_core(self) -> str:
+        """The FIND part carrying the recipe's anchors, and nothing else.
+
+        The anchors have to live *inside* this pattern rather than be applied
+        to the match spans afterwards. Filtering the results of finditer
+        cannot reproduce backtracking: `(?:a|b)|alpha` against "alpha" reports
+        a one-character match at position 0, whereas the real engine, on
+        finding that `$` fails there, backtracks into the `alpha` branch and
+        matches the whole line. Post-hoc filtering would call that line a
+        miss, and the Proof page would contradict the pattern it exports.
+        """
         core = self.core_pattern()
+        if not core:
+            return ""
+        body = for_concat(core)
+        if self.anchor_start:
+            body = "^" + body
+        if self.anchor_end:
+            body = body + "$"
+        return body
+
+    def compile_core(self) -> re.Pattern:
+        """The FIND part plus anchors — what decides whether a line matches."""
+        core = self.anchored_core()
         if not core:
             raise RecipeError("No Find rule is enabled.")
         try:
@@ -583,7 +611,6 @@ class Recipe:
             "multiline": self.multiline,
             "anchor_start": self.anchor_start,
             "anchor_end": self.anchor_end,
-            "scope": self.scope,
             "rules": [r.to_dict() for r in self.rules],
         }
 

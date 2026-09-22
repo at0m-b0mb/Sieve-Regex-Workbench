@@ -19,7 +19,7 @@ from PyQt6.QtWidgets import QVBoxLayout, QWidget
 from ...core import redos
 from .. import theme
 from ..marks import GrowthCurve
-from ..widgets import (Badge, Card, PatternEdit, QuietButton, Stat, caption,
+from ..widgets import (Badge, Card, PatternEdit, QuietButton, caption,
                        intro, label, page_body, primary, row, scrolled, title)
 
 

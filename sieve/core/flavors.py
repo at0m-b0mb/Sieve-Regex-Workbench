@@ -293,8 +293,8 @@ def _issue_for(cid: str, text: str, f: Flavor) -> Issue | None:
                      "Sieve substitutes the POSIX classes on export.")
     if cid == "boundary" and not f.word_boundary:
         return Issue(REWRITE, text, f"{f.title} has no \\b.",
-                     "Sieve substitutes \\< and \\> for GNU tools; other "
-                     "POSIX tools have no equivalent at all.")
+                     "Left as written — GNU grep and gawk accept it. Replace "
+                     "it by hand with \\< or \\> if your tool is stricter.")
     if cid == "unicode_prop" and not f.unicode_props:
         return Issue(BLOCKING, text, f"{f.title} has no \\p{{…}} properties.",
                      "Spell the ranges out, or use the `regex` module in "
@@ -415,11 +415,16 @@ def translate(pattern: str, flavor_id: str) -> tuple[str, list[str]]:
         if changed:
             notes.append("Shorthand classes replaced with POSIX classes.")
 
-    if not f.word_boundary:
-        if r"\b" in out:
-            out = out.replace(r"\b", r"\<", 1) if False else out
-            notes.append("\\b left as written — GNU grep understands \\b, "
-                         "strict POSIX tools do not.")
+    if not f.word_boundary and r"\b" in out:
+        # Deliberately NOT rewritten. GNU grep and gawk understand \b; strict
+        # POSIX tools have \< and \> for the two edges separately, and this
+        # function cannot tell which edge a given \b is. Substituting the
+        # wrong one would silently change the pattern's meaning, which is the
+        # one outcome worth avoiding at all costs — so it is reported, not
+        # guessed at.
+        notes.append("\\b left as written: GNU grep and gawk accept it, strict "
+                     "POSIX tools do not, and \\< / \\> cannot be chosen "
+                     "safely without knowing which edge is meant.")
 
     if not f.inline_flags:
         m = re.match(r"^\(\?([aimsux]+)\)", out)

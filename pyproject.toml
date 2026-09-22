@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "sieve-regex"
-version = "1.0.0"
+version = "1.1.0"
 description = "A regex workbench for security work: build, prove, check and ship patterns."
 readme = "README.md"
 requires-python = ">=3.10"

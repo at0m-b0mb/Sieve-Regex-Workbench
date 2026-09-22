@@ -14,7 +14,7 @@ it says "unrecognised" rather than inventing a plausible description.
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 
 @dataclass

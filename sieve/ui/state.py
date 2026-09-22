@@ -15,7 +15,7 @@ from pathlib import Path
 from PyQt6.QtCore import QObject, QSettings, pyqtSignal
 
 from ..core.proof import Case, Suite
-from ..core.rules import Recipe, RecipeError, Rule
+from ..core.rules import Recipe, Rule
 from ..core import samples
 
 ORG = "at0m-b0mb"

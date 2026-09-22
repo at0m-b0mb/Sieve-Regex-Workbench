@@ -1,12 +1,15 @@
 """
-Render the brand assets from the application's own drawing code.
+Render the mark from the application's own drawing code.
 
-The diagram in the README is produced by the same `draw_flow` the How-it-works
-page paints with, through an SVG painter instead of a screen one. That is the
-whole point: the picture in the documentation cannot drift from the picture in
-the product, because there is only one of them.
+The flow diagram used to be generated here too, from the same `draw_flow` the
+How-it-works page paints with. It was dropped: Qt writes <text> elements naming
+real macOS fonts at x/y positions computed for those exact fonts, and GitHub
+has neither, so every label drifted. The README uses a Mermaid block instead,
+which GitHub renders natively and which stays legible in both its themes. The
+in-app diagram is unaffected — it is drawn live, where the fonts exist.
 
-    python3 docs/make_assets.py
+    python3 docs/make_assets.py      # the mark
+    python3 docs/make_banner.py      # the banner
 """
 
 import os
@@ -22,7 +25,7 @@ from PyQt6.QtSvg import QSvgGenerator
 from PyQt6.QtWidgets import QApplication
 
 from sieve.ui import theme
-from sieve.ui.marks import draw_flow, paint_mark
+from sieve.ui.marks import paint_mark
 
 HERE = Path(__file__).resolve().parent
 
@@ -50,16 +53,9 @@ def svg(path: Path, width: int, height: int, mode: str, draw,
 
 def main() -> int:
     app = QApplication(sys.argv)
-    flow_desc = ("Sample text passes through three gates in turn — Find, then "
-                 "Require, then Exclude — and what survives becomes kept "
-                 "lines with captured fields. The Library feeds patterns into "
-                 "the gates, Proof cases hold them in place, Safety checks the "
-                 "pattern for catastrophic backtracking, and Ship exports it.")
     mark_desc = ("The Sieve mark: a mesh bowl with two grains falling through "
                  "it and one held back on top. Find, and exclude.")
     for mode, suffix in ((theme.LIGHT, "light"), (theme.DARK, "dark")):
-        svg(HERE / f"flow-{suffix}.svg", 1040, 560, mode, draw_flow,
-            "How Sieve works", flow_desc)
         svg(HERE / f"mark-{suffix}.svg", 160, 160, mode,
             lambda p, r, m: paint_mark(p, r.adjusted(16, 16, -16, -16), m),
             "Sieve", mark_desc)

@@ -21,7 +21,7 @@ import re
 import shlex
 from dataclasses import dataclass
 
-from .rules import Recipe, group
+from .rules import LINE_RUN, Recipe
 from . import flavors
 
 
@@ -109,8 +109,18 @@ def _translated(recipe: Recipe, target: Target) -> tuple[str, list[str]]:
 
 def _core_translated(recipe: Recipe, target: Target) -> tuple[str, list[str]]:
     """Just the FIND part — what a pipeline's first pass searches for."""
-    core = recipe.core_pattern() or ".*"
+    core = recipe.anchored_core() or LINE_RUN
     return flavors.translate(core, target.flavor)
+
+
+def _siem_core(recipe: Recipe, flavor: str = "pcre") -> str:
+    """The FIND part WITH the recipe's anchors, for the detection targets.
+
+    These builders used to start from core_pattern(), which by construction
+    carries no ^ or $ — so a rule anchored on Build shipped to Splunk or Sigma
+    unanchored, matching far more than the author had proved.
+    """
+    return flavors.translate(recipe.anchored_core() or LINE_RUN, flavor)[0]
 
 
 def _guard_patterns(recipe: Recipe, target: Target) -> tuple[list[str], list[str]]:
@@ -134,7 +144,14 @@ class Emission:
         return self.report.runs or self.pipeline
 
 
-def emit(recipe: Recipe, target_id: str, *, source: str = "logfile") -> Emission:
+def emit(recipe: Recipe, target_id: str, *, source: str = "logfile",
+         suite=None) -> Emission:
+    """Render `recipe` for one target.
+
+    `suite` is the recipe's proof cases. Only the .sieve target carries them,
+    and it advertises that it does — so without them the file you commit fails
+    `sieve test` in the CI you wrote it for.
+    """
     t = BY_ID[target_id]
     pipeline = _needs_pipeline(recipe, t)
     notes: list[str] = []
@@ -165,7 +182,10 @@ def emit(recipe: Recipe, target_id: str, *, source: str = "logfile") -> Emission
     ci = recipe.ignore_case
     reqs, excs = _guard_patterns(recipe, t)
     builder = _BUILDERS[t.id]
-    code = builder(recipe, t, pattern, reqs, excs, pipeline, ci, source)
+    if t.id == "json":
+        code = _b_json(recipe, suite)
+    else:
+        code = builder(recipe, t, pattern, reqs, excs, pipeline, ci, source)
 
     if f.linear_time:
         notes.append(f"{f.title} runs in guaranteed linear time — this "
@@ -420,7 +440,7 @@ foreach (file($argv[1], FILE_IGNORE_NEW_LINES) as $n => $line) {{
 
 def _b_splunk(r, t, pat, reqs, excs, pipe, ci, src):
     fields = re.findall(r"\(\?P?<(\w+)>", pat)
-    core = flavors.translate(r.core_pattern() or ".*", "pcre")[0]
+    core = _siem_core(r, "pcre")
     lines = ["index=* sourcetype=*"]
     for p in reqs:
         lines.append(f'| regex _raw="{p}"')
@@ -437,11 +457,16 @@ def _b_splunk(r, t, pat, reqs, excs, pipe, ci, src):
 
 
 def _b_elastic(r, t, pat, reqs, excs, pipe, ci, src):
-    core = flavors.translate(r.core_pattern() or ".*", "re2")[0]
+    core = _siem_core(r, "re2")
+    # Lucene regexp is anchored to the whole field, so an unanchored pattern
+    # needs .* on each side — and an anchored one must NOT get it, or the
+    # anchor the author set is undone by the wrapper.
+    lead = "" if r.anchor_start else ".*"
+    tail = "" if r.anchor_end else ".*"
     body = {
         "query": {
             "bool": {
-                "must": [{"regexp": {"message": {"value": f".*{core}.*",
+                "must": [{"regexp": {"message": {"value": f"{lead}{core}{tail}",
                                                  "flags": "ALL"}}}],
                 "must_not": [{"regexp": {"message": {"value": f".*{p}.*",
                                                      "flags": "ALL"}}}
@@ -458,7 +483,7 @@ def _b_elastic(r, t, pat, reqs, excs, pipe, ci, src):
 
 
 def _b_sigma(r, t, pat, reqs, excs, pipe, ci, src):
-    core = flavors.translate(r.core_pattern() or ".*", "re2")[0]
+    core = _siem_core(r, "re2")
     title = r.name.strip() or "Untitled"
     intent = r.intent.strip() or "Written with Sieve."
     yaml = [
@@ -473,20 +498,22 @@ def _b_sigma(r, t, pat, reqs, excs, pipe, ci, src):
         "  selection:",
         f"    message|re: '{core}'",
     ]
-    if reqs:
-        yaml.append("  require:")
-        for i, p in enumerate(reqs):
-            yaml.append(f"    message|re: '{p}'")
+    # One named block per Require. Repeating `message|re:` inside a single
+    # mapping is not a list — YAML keeps only the last, so every guard but one
+    # used to be discarded the moment a loader read the rule.
+    parts = ["selection"]
+    for i, p in enumerate(reqs):
+        yaml.append(f"  require{i}:")
+        yaml.append(f"    message|re: '{p}'")
+        parts.append(f"require{i}")
     if excs:
+        # A list under one key is OR, which is exactly what "not filter" wants.
         yaml.append("  filter:")
+        yaml.append("    message|re:")
         for p in excs:
-            yaml.append(f"    message|re: '{p}'")
-    cond = "selection"
-    if reqs:
-        cond += " and require"
-    if excs:
-        cond += " and not filter"
-    yaml.append(f"  condition: {cond}")
+            yaml.append(f"      - '{p}'")
+        parts.append("not filter")
+    yaml.append(f"  condition: {' and '.join(parts)}")
     yaml.append("falsepositives:")
     yaml.append("  - Document what you found while testing this.")
     yaml.append("level: medium")
@@ -496,7 +523,7 @@ def _b_sigma(r, t, pat, reqs, excs, pipe, ci, src):
 def _b_yara(r, t, pat, reqs, excs, pipe, ci, src):
     name = re.sub(r"\W+", "_", r.name.strip()) or "Sieve_Pattern"
     mods = " nocase" if r.ignore_case else ""
-    strings = [f'        $find = /{r.core_pattern() or ".*"}/{mods.strip()}']
+    strings = [f'        $find = /{r.anchored_core() or LINE_RUN}/{mods.strip()}']
     for i, p in enumerate(reqs):
         strings.append(f"        $require{i} = /{p}/{mods.strip()}")
     for i, p in enumerate(excs):
@@ -518,7 +545,7 @@ def _b_yara(r, t, pat, reqs, excs, pipe, ci, src):
 
 
 def _b_suricata(r, t, pat, reqs, excs, pipe, ci, src):
-    core = r.core_pattern() or ".*"
+    core = r.anchored_core() or LINE_RUN
     mods = "i" if r.ignore_case else ""
     msg = (r.name or "Sieve pattern").replace('"', "'")
     lines = [f'alert http any any -> any any (msg:"{msg}"; flow:established,to_server;',
@@ -533,8 +560,12 @@ def _b_suricata(r, t, pat, reqs, excs, pipe, ci, src):
     return "\n".join(lines) + note
 
 
-def _b_json(r, t, pat, reqs, excs, pipe, ci, src):
-    return r.to_json()
+def _b_json(recipe, suite=None):
+    """The whole document: rules AND the proof cases, as the blurb promises."""
+    import json as _json
+    doc = recipe.to_dict()
+    doc["proof"] = suite.to_list() if suite is not None else []
+    return _json.dumps(doc, indent=2)
 
 
 _BUILDERS = {

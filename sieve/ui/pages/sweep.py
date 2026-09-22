@@ -13,7 +13,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from PyQt6.QtCore import QObject, Qt, QThread, pyqtSignal
+from PyQt6.QtCore import QObject, QThread, pyqtSignal
 from PyQt6.QtGui import QColor, QFont
 from PyQt6.QtWidgets import (QCheckBox, QFileDialog, QLineEdit, QProgressBar,
                              QSpinBox, QTreeWidget, QTreeWidgetItem,
@@ -21,7 +21,7 @@ from PyQt6.QtWidgets import (QCheckBox, QFileDialog, QLineEdit, QProgressBar,
 
 from ...core import scan as scanner
 from .. import theme
-from ..widgets import (Badge, Card, QuietButton, caption, intro, label,
+from ..widgets import (Badge, Card, QuietButton, intro, label,
                        page_body, primary, row, scrolled, title)
 
 

@@ -4,9 +4,9 @@ import re
 
 import pytest
 
-from sieve.core.rules import (EXCLUDE, FIND, JOIN_ANY, REQUIRE, Recipe,
+from sieve.core.rules import (EXCLUDE, JOIN_ANY, REQUIRE, Recipe,
                               RecipeError, Repeat, Rule, escape_literal,
-                              group, _needs_group)
+                              _needs_group)
 
 
 def test_literal_escaping_keeps_text_readable():

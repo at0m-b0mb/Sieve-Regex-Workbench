@@ -9,17 +9,19 @@ watching it assemble itself out of choices they understand.
 
 from __future__ import annotations
 
-from PyQt6.QtCore import Qt, pyqtSignal
+from PyQt6.QtCore import Qt, QTimer, pyqtSignal
+from PyQt6.QtGui import QAction, QTextCursor
 from PyQt6.QtWidgets import (QApplication, QCheckBox, QComboBox, QFrame,
-                             QHBoxLayout, QLabel, QLineEdit, QSizePolicy,
-                             QSpinBox, QSplitter, QVBoxLayout, QWidget)
+                             QLineEdit, QMenu,
+                             QSpinBox, QSplitter, QToolButton,
+                             QVBoxLayout, QWidget)
 
 from ...core import rules as R
 from ...core import redos
+from .. import palette
 from .. import theme
 from ..widgets import (Badge, Card, PatternEdit, QuietButton, caption,
-                       hairline, intro, label, overline, page_body, primary,
-                       row, scrolled, title)
+                       intro, label, page_body, row, scrolled, title)
 
 
 class RuleCard(QFrame):
@@ -98,8 +100,34 @@ class RuleCard(QFrame):
         self.capture_name.setVisible(rule.capture)
         self.capture_name.textChanged.connect(self._on_option)
 
+        # Every construct by its English name, inserted at the cursor with the
+        # part you are meant to replace already selected. The gap between
+        # knowing what you want to match and knowing how to spell it is where
+        # most people give up on regex, and this is the bridge across it.
+        self.insert = QToolButton()
+        self.insert.setText("Insert")
+        self.insert.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.insert.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
+        self.insert.setToolTip("Drop a regex construct in at the cursor")
+        menu = QMenu(self.insert)
+        for heading, items in palette.GROUPS:
+            menu.addSection(heading)
+            for lab, snippet, why in items:
+                act = QAction(lab, menu)
+                act.setToolTip(why)
+                act.triggered.connect(
+                    lambda _=False, sn=snippet: self._insert(sn))
+                menu.addAction(act)
+        menu.setToolTipsVisible(True)
+        self.insert.setMenu(menu)
+
+        # How much of the sample this one rule accounts for. A rule matching
+        # nothing is dead; a rule matching every line is not discriminating.
+        self.hits = Badge("", "neutral", mode)
+        self.hits.setVisible(False)
+
         opts = row(self.literal, self.whole_word, self.capture,
-                   self.capture_name, None)
+                   self.capture_name, None, self.hits, self.insert)
         box.addLayout(opts)
 
         # --- repetition -------------------------------------------------------
@@ -139,6 +167,31 @@ class RuleCard(QFrame):
         self._building = False
         self._sync_repeat_visibility()
         self.apply_mode(mode)
+
+    def _insert(self, snippet: str) -> None:
+        """Put a construct in at the cursor and select its placeholder."""
+        text, sel_at, sel_len = palette.expand(snippet)
+        cursor = self.pattern.textCursor()
+        cursor.insertText(text)
+        if sel_len:
+            end = cursor.position() - (len(text) - sel_at - sel_len)
+            cursor.setPosition(end - sel_len)
+            cursor.setPosition(end, QTextCursor.MoveMode.KeepAnchor)
+            self.pattern.setTextCursor(cursor)
+        self.pattern.setFocus()
+
+    def set_hits(self, matched: int | None, total: int) -> None:
+        """Show what this rule alone accounts for in the current sample."""
+        if matched is None or not total:
+            self.hits.setVisible(False)
+            return
+        self.hits.setVisible(True)
+        if matched == 0:
+            self.hits.set_tone("warn", "matches nothing here")
+        elif matched == total and total > 2:
+            self.hits.set_tone("warn", "matches every line")
+        else:
+            self.hits.set_tone("brass", f"{matched} of {total} lines")
 
     # -- reactions -----------------------------------------------------------
 
@@ -239,7 +292,15 @@ class BuildPage(QWidget):
         split.setSizes([600, 460])
         outer.addWidget(split)
 
+        # Counting is cheap but runs per rule per line, so it trails the
+        # edit rather than racing it.
+        self._count_timer = QTimer(self)
+        self._count_timer.setSingleShot(True)
+        self._count_timer.setInterval(160)
+        self._count_timer.timeout.connect(self._recount)
+
         state.recipeChanged.connect(self.refresh)
+        state.sampleChanged.connect(lambda: self._count_timer.start())
         self.refresh()
 
     # -- left column ---------------------------------------------------------
@@ -432,6 +493,30 @@ class BuildPage(QWidget):
             self.safety_badge.setToolTip(
                 "No known-bad shape found. Run Safety for a measured check.")
 
+    def _recount(self) -> None:
+        """How many sample lines each rule matches, on its own."""
+        import re as _re
+        lines = self.state.sample_text.split("\n")
+        total = len(lines)
+        flags = self.state.recipe.flags()
+        for card in self.cards:
+            rule = card.rule
+            if not rule.enabled or not rule.pattern.strip():
+                card.set_hits(None, 0)
+                continue
+            try:
+                fragment = rule.fragment()
+                # Never run a shape that can backtrack forever on the GUI
+                # thread — the same guard the Proof page uses.
+                if redos.static_findings(fragment):
+                    card.set_hits(None, 0)
+                    continue
+                rx = _re.compile(fragment, flags)
+            except Exception:
+                card.set_hits(None, 0)
+                continue
+            card.set_hits(sum(1 for line in lines if rx.search(line)), total)
+
     def _rebuild_cards(self) -> None:
         for card in self.cards:
             card.setParent(None)
@@ -449,6 +534,7 @@ class BuildPage(QWidget):
             self.cards.append(card)
 
         self.empty_note.setVisible(not self.state.recipe.rules)
+        self._count_timer.start()
 
     def _on_card_changed(self) -> None:
         # The cards edit the rule objects in place, so the recipe is already
@@ -467,6 +553,7 @@ class BuildPage(QWidget):
             if l.startswith("  · ") else f"<div style='margin-top:4px'>{l}</div>"
             for l in lines))
         self._update_safety(pattern)
+        self._count_timer.start()
         self.state._dirty = True
         self.state.sampleChanged.emit()      # nudges Proof to re-run
 

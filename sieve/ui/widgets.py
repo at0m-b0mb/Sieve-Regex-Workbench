@@ -8,19 +8,11 @@ theme changes, so there is exactly one place a palette decision is made.
 from __future__ import annotations
 
 from PyQt6.QtCore import Qt, pyqtSignal
-from PyQt6.QtGui import (QColor, QFont, QSyntaxHighlighter, QTextCharFormat,
-                         QTextCursor)
+from PyQt6.QtGui import (QColor, QFont, QSyntaxHighlighter, QTextCharFormat)
 from PyQt6.QtWidgets import (QFrame, QHBoxLayout, QLabel, QPlainTextEdit,
                              QPushButton, QSizePolicy, QVBoxLayout, QWidget)
 
 from . import theme
-
-
-class Themed:
-    """Mixin for anything that must repaint when the palette changes."""
-
-    def apply_mode(self, mode: str) -> None:      # pragma: no cover - overridden
-        pass
 
 
 class WrapLabel(QLabel):
@@ -143,37 +135,6 @@ class Badge(QLabel):
             f"border-radius: 2px; padding: 1px 6px;"
             f"{theme.font_css('label')} letter-spacing: 1px;"
         )
-
-
-class Stat(QWidget):
-    """A figure with a word under it. Serif numeral, small-caps label."""
-
-    def __init__(self, value: str, name: str, tone: str = "ink",
-                 mode: str = theme.LIGHT, parent=None):
-        super().__init__(parent)
-        self.tone = tone
-        self.mode = mode
-        box = QVBoxLayout(self)
-        box.setContentsMargins(0, 0, 0, 0)
-        box.setSpacing(0)
-        self.value = label(value, object_name="Figure")
-        self.name = overline(name)
-        box.addWidget(self.value)
-        box.addWidget(self.name)
-        self.apply_mode(mode)
-
-    def set_value(self, value: str, tone: str | None = None) -> None:
-        self.value.setText(value)
-        if tone is not None and tone != self.tone:
-            self.tone = tone
-            self.apply_mode(self.mode)
-
-    def apply_mode(self, mode: str) -> None:
-        self.mode = mode
-        family, size, weight = theme.TYPE["figure"]
-        self.value.setStyleSheet(
-            f"font-family: {family}; font-size: {size}px; font-weight: {weight};"
-            f"color: {theme.color(self.tone, mode)};")
 
 
 class QuietButton(QPushButton):

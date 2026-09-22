@@ -17,9 +17,8 @@ from PyQt6.QtWidgets import (QApplication, QFileDialog, QListWidget,
                              QVBoxLayout, QWidget)
 
 from ...core import export
-from .. import theme
-from ..widgets import (Badge, Card, QuietButton, caption, intro, label,
-                       overline, page_body, primary, row, scrolled, title)
+from ..widgets import (Badge, Card, QuietButton, intro, label,
+                       page_body, primary, row, scrolled, title)
 
 
 class ShipPage(QWidget):
@@ -119,7 +118,8 @@ class ShipPage(QWidget):
         if self.state.recipe.is_empty():
             return None
         try:
-            return export.emit(self.state.recipe, self.current)
+            return export.emit(self.state.recipe, self.current,
+                               suite=self.state.suite)
         except Exception as exc:
             self.code.setPlainText(f"Cannot emit this recipe yet:\n{exc}")
             return None

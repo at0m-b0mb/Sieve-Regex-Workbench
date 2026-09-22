@@ -16,10 +16,9 @@ from PyQt6.QtWidgets import (QAbstractItemView, QApplication, QHeaderView,
                              QVBoxLayout, QWidget)
 
 from ...core import explain, flavors
-from ...core.rules import recipe_from_pattern
 from .. import theme
-from ..widgets import (Badge, Card, PatternEdit, QuietButton, caption, intro,
-                       label, page_body, primary, row, scrolled, title)
+from ..widgets import (Card, PatternEdit, QuietButton, caption, intro,
+                       label, page_body, row, scrolled, title)
 
 
 class ReadPage(QWidget):

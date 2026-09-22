@@ -16,18 +16,16 @@ import sys
 from pathlib import Path
 
 from .core import explain, export, flavors, library, redos, samples, scan
-from .core.matcher import run as run_matcher
+
 from .core.proof import Suite
 from .core.rules import Recipe, RecipeError, recipe_from_pattern
 
 OK, FAILED, ERROR = 0, 1, 2
 
-
 def _load(path: str) -> tuple[Recipe, Suite]:
     text = Path(path).read_text(encoding="utf-8")
     data = json.loads(text)
     return Recipe.from_dict(data), Suite.from_list(data.get("proof", []))
-
 
 def _pattern_of(value: str) -> tuple[Recipe, Suite]:
     """Accept either a saved pattern file or a raw regex."""
@@ -38,7 +36,6 @@ def _pattern_of(value: str) -> tuple[Recipe, Suite]:
         except (json.JSONDecodeError, RecipeError):
             pass
     return recipe_from_pattern(value), Suite()
-
 
 # --- commands ---------------------------------------------------------------
 
@@ -59,7 +56,6 @@ def cmd_test(args) -> int:
     print(f"\n{recipe.name}: {outcome.headline()}")
     return OK if outcome.green else FAILED
 
-
 def cmd_scan(args) -> int:
     recipe, _ = _pattern_of(args.pattern)
     result = scan.scan(recipe, args.path, include=args.include or "",
@@ -71,7 +67,6 @@ def cmd_scan(args) -> int:
         print(result.summary(), file=sys.stderr)
     return OK if result.hits else FAILED
 
-
 def cmd_explain(args) -> int:
     recipe, _ = _pattern_of(args.pattern)
     pattern = recipe.pattern()
@@ -82,7 +77,6 @@ def cmd_explain(args) -> int:
     for line in explain.prose(pattern):
         print("  " + line)
     return OK
-
 
 def cmd_lint(args) -> int:
     recipe, _ = _pattern_of(args.pattern)
@@ -107,7 +101,6 @@ def cmd_lint(args) -> int:
         worst = FAILED
     return worst
 
-
 def cmd_emit(args) -> int:
     recipe, _ = _pattern_of(args.pattern)
     if args.target not in export.BY_ID:
@@ -124,7 +117,6 @@ def cmd_emit(args) -> int:
             print(f"#   {issue.message}", file=sys.stderr)
         return FAILED
     return OK
-
 
 def cmd_library(args) -> int:
     entries = library.search(args.query) if args.query else list(library.ENTRIES)
@@ -143,7 +135,6 @@ def cmd_library(args) -> int:
         print(f"{len(entries)} of {len(library.ENTRIES)} patterns")
     return OK if entries else FAILED
 
-
 def cmd_samples(args) -> int:
     if args.name:
         sample = samples.BY_ID.get(args.name)
@@ -156,11 +147,9 @@ def cmd_samples(args) -> int:
         print(f"{sample.id:<10} {sample.title:<26} {sample.blurb}")
     return OK
 
-
 def cmd_gui(args) -> int:
     from .ui.app import main as gui_main
     return gui_main([sys.argv[0]] + ([args.pattern] if args.pattern else []))
-
 
 # --- wiring -----------------------------------------------------------------
 
@@ -217,7 +206,6 @@ def build_parser() -> argparse.ArgumentParser:
     p.set_defaults(func=cmd_gui)
     return parser
 
-
 def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
@@ -233,7 +221,6 @@ def main(argv: list[str] | None = None) -> int:
         return ERROR
     except KeyboardInterrupt:
         return ERROR
-
 
 if __name__ == "__main__":
     sys.exit(main())

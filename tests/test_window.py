@@ -17,7 +17,6 @@ pytest.importorskip("PyQt6.QtWidgets")
 
 from PyQt6.QtWidgets import QApplication
 
-from sieve.core.library import BY_ID
 from sieve.core.rules import EXCLUDE, FIND, Rule
 from sieve.ui import theme
 

@@ -16,8 +16,8 @@ from PyQt6.QtWidgets import (QApplication, QComboBox, QFrame, QLineEdit,
 from ...core import library as lib
 from ...core.rules import EXCLUDE, FIND, REQUIRE, Rule
 from .. import theme
-from ..widgets import (Badge, Card, QuietButton, caption, intro, label,
-                       overline, page_body, row, scrolled, title)
+from ..widgets import (Badge, QuietButton, caption, intro, label,
+                       page_body, row, scrolled, title)
 
 
 class EntryCard(QFrame):

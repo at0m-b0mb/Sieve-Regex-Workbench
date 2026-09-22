@@ -127,6 +127,8 @@ def run(recipe: Recipe, text: str, *, max_lines: int = 5000,
         # as failing a guard it was never going to reach.
         if core is not None:
             found = False
+            # compile_core() carries the recipe's anchors, so the engine
+            # backtracks correctly instead of us second-guessing its spans.
             for m in core.finditer(line):
                 found = True
                 if m.end() == m.start():
