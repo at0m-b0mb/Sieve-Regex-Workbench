@@ -57,11 +57,7 @@ JOIN_LABEL = {
 
 
 class RecipeError(ValueError):
-    """A recipe that cannot be compiled, with a rule index when we know one."""
-
-    def __init__(self, message: str, rule_index: int | None = None):
-        super().__init__(message)
-        self.rule_index = rule_index
+    """A recipe that cannot be compiled, carrying a message fit to show."""
 
 
 def escape_literal(text: str) -> str:

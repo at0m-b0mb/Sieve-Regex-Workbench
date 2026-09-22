@@ -340,10 +340,21 @@ class Window(QMainWindow):
             action.triggered.connect(lambda _=False, k=key: self.show_page(k))
             view.addAction(action)
         view.addSeparator()
+        edit = bar.addMenu("&Edit")
+        undo = QAction("Undo", self)
+        undo.setShortcut(QKeySequence.StandardKey.Undo)
+        undo.triggered.connect(self._undo)
+        edit.addAction(undo)
+
         cycle = QAction("Change theme", self)
         cycle.setShortcut(QKeySequence("Ctrl+T"))
         cycle.triggered.connect(self._cycle_theme)
         view.addAction(cycle)
+
+    def _undo(self) -> None:
+        message = self.state.undo()
+        self.state.status(message or "Nothing to undo",
+                          "pass" if message else "neutral")
 
     def _fill_recent(self) -> None:
         """Rebuilt each time it opens, so a deleted file does not linger."""

@@ -129,7 +129,6 @@ FLAVOR_ORDER = ("python", "pcre", "re2", "javascript", "java", "dotnet",
 @dataclass(frozen=True)
 class Construct:
     id: str
-    label: str
     where: tuple[int, int]
     text: str
 
@@ -197,7 +196,7 @@ def constructs(pattern: str) -> list[Construct]:
                 continue
             if cid == "named_dotnet" and pattern[m.start():m.start() + 4] == "(?P<":
                 continue
-            found.append(Construct(cid, label, m.span(), m.group(0)))
+            found.append(Construct(cid, m.span(), m.group(0)))
     found.sort(key=lambda c: c.where[0])
     return found
 

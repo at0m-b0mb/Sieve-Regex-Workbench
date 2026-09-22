@@ -40,6 +40,10 @@ class AppState(QObject):
         self.file_path: Path | None = None
         self._dirty = False
         self.theme_choice = self.settings.value("theme", "auto")
+        # Deleting a rule you spent ten minutes on used to be final. One level
+        # of undo per destructive action, bounded, with the wording to show in
+        # the status line when it is used.
+        self._undo: list[tuple[str, object]] = []
 
     # -- theme ---------------------------------------------------------------
 
@@ -64,8 +68,29 @@ class AppState(QObject):
 
     def remove_rule(self, index: int) -> None:
         if 0 <= index < len(self.recipe.rules):
-            del self.recipe.rules[index]
+            rule = self.recipe.rules.pop(index)
+            self._push_undo(
+                f"Restored the rule “{rule.label or rule.pattern[:24]}”",
+                lambda: self.recipe.rules.insert(min(index, len(self.recipe.rules)), rule))
             self.touch()
+
+    def _push_undo(self, message: str, restore) -> None:
+        self._undo.append((message, restore))
+        del self._undo[:-20]
+
+    @property
+    def can_undo(self) -> bool:
+        return bool(self._undo)
+
+    def undo(self) -> str:
+        """Put back whatever was last removed. Returns what to tell the user."""
+        if not self._undo:
+            return ""
+        message, restore = self._undo.pop()
+        restore()
+        self.touch()
+        self.suiteChanged.emit()
+        return message
 
     def move_rule(self, index: int, delta: int) -> None:
         target = index + delta
@@ -86,7 +111,11 @@ class AppState(QObject):
 
     def remove_case(self, index: int) -> None:
         if 0 <= index < len(self.suite.cases):
-            del self.suite.cases[index]
+            case = self.suite.cases.pop(index)
+            self._push_undo(
+                "Restored the proof case",
+                lambda: self.suite.cases.insert(
+                    min(index, len(self.suite.cases)), case))
             self._dirty = True
             self.suiteChanged.emit()
 

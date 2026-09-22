@@ -195,6 +195,7 @@ class ReadPage(QWidget):
                 short = report.flavor.title.split(" (")[0]
                 objections.append(f"{short}  —  " + "; ".join(
                     x.message.replace(report.flavor.title, "it").rstrip(".")
+                    + (f"  ({x.construct})" if x.construct else "")
                     for x in report.issues) + ".")
         self.matrix.resizeColumnToContents(1)
         self.objections.setText("\n".join(objections) if objections else

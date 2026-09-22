@@ -139,10 +139,6 @@ class Emission:
     report: flavors.Report
     pipeline: bool = False
 
-    @property
-    def usable(self) -> bool:
-        return self.report.runs or self.pipeline
-
 
 def emit(recipe: Recipe, target_id: str, *, source: str = "logfile",
          suite=None) -> Emission:

@@ -180,18 +180,35 @@ class RuleCard(QFrame):
             self.pattern.setTextCursor(cursor)
         self.pattern.setFocus()
 
-    def set_hits(self, matched: int | None, total: int) -> None:
+    def set_hits(self, matched: int | None, total: int,
+                 examples: list[str] | None = None) -> None:
         """Show what this rule alone accounts for in the current sample."""
         if matched is None or not total:
             self.hits.setVisible(False)
+            self.hits.setToolTip("")
             return
         self.hits.setVisible(True)
         if matched == 0:
             self.hits.set_tone("warn", "matches nothing here")
-        elif matched == total and total > 2:
+            self.hits.setToolTip(
+                "Nothing in the current sample matches this rule on its own. "
+                "Either the sample does not contain what you are looking for, "
+                "or the rule does not say what you meant.")
+            return
+        if matched == total and total > 2:
             self.hits.set_tone("warn", "matches every line")
         else:
             self.hits.set_tone("brass", f"{matched} of {total} lines")
+        # The count says how much; these say what. Seeing the actual text a
+        # rule caught is the fastest way to notice it is catching the wrong
+        # thing — a count alone looks healthy right up until you look.
+        if examples:
+            shown = "\n".join(f"  {e}" for e in examples[:4])
+            more = f"\n  … and {matched - len(examples[:4])} more" \
+                if matched > len(examples[:4]) else ""
+            self.hits.setToolTip("What this rule matches:\n" + shown + more)
+        else:
+            self.hits.setToolTip("")
 
     # -- reactions -----------------------------------------------------------
 
@@ -355,6 +372,7 @@ class BuildPage(QWidget):
 
     def _adder(self, text: str, kind: str):
         button = QuietButton(text)
+        button.setToolTip(R.KIND_BLURB[kind])
         button.clicked.connect(lambda: self._add(kind))
         return button
 
@@ -515,7 +533,18 @@ class BuildPage(QWidget):
             except Exception:
                 card.set_hits(None, 0)
                 continue
-            card.set_hits(sum(1 for line in lines if rx.search(line)), total)
+            matched = 0
+            examples: list[str] = []
+            for line in lines:
+                found = rx.search(line)
+                if not found:
+                    continue
+                matched += 1
+                if len(examples) < 4:
+                    text = found.group(0)
+                    examples.append(text[:70] + ("…" if len(text) > 70 else "")
+                                    or "(an empty match)")
+            card.set_hits(matched, total, examples)
 
     def _rebuild_cards(self) -> None:
         for card in self.cards:

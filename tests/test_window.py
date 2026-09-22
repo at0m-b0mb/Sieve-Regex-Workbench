@@ -27,18 +27,41 @@ def app():
     yield instance
 
 
-@pytest.fixture
-def window(app):
+@pytest.fixture(scope="module")
+def _window(app):
+    """One window for the whole module, deliberately.
+
+    `apply_mode` sets the stylesheet on the QApplication, which restyles every
+    window that still exists — so building a fresh Window per test left a
+    growing pile of half-torn-down windows for each theme switch to walk.
+    That segfaulted on macOS with Python 3.10 in CI, at around the twentieth
+    window, and would eventually have done so anywhere.
+    """
     from sieve.ui.app import Window
     win = Window()
     win.resize(1280, 860)
     win.show()
     app.processEvents()
     yield win
-    # closeEvent asks about unsaved changes with a modal dialog, which nothing
-    # will ever answer offscreen. Clear the flag before tearing down.
     win.state._dirty = False
     win.close()
+    win.deleteLater()
+    app.processEvents()
+
+
+@pytest.fixture
+def window(_window, app):
+    """The shared window, with a fresh document for each test."""
+    from sieve.core import samples
+    _window.state.new_document()
+    _window.state.set_sample(samples.SSH.text, samples.SSH.id)
+    _window.state._undo.clear()
+    _window.apply_mode(theme.LIGHT)
+    app.processEvents()
+    yield _window
+    # closeEvent asks about unsaved changes with a modal dialog that nothing
+    # will ever answer offscreen. Clear the flag before anything tears down.
+    _window.state._dirty = False
 
 
 def test_every_page_builds_and_shows(window, app):
@@ -174,3 +197,84 @@ def test_the_shipped_example_patterns_open(window, app, name):
     app.processEvents()
     assert window.state.recipe.rules
     assert window.state.suite.run(window.state.recipe).green
+
+
+def test_deleting_a_rule_can_be_undone(window, app):
+    """A rule you spent ten minutes on used to be gone for good."""
+    window.state.add_rule(Rule(pattern="keep-me", label="the one that matters"))
+    window.state.add_rule(Rule(pattern="other", label="another"))
+    before = len(window.state.recipe.rules)
+
+    window.state.remove_rule(0)
+    assert len(window.state.recipe.rules) == before - 1
+
+    message = window.state.undo()
+    assert "the one that matters" in message
+    assert len(window.state.recipe.rules) == before
+    assert window.state.recipe.rules[0].label == "the one that matters"
+
+
+def test_undo_with_nothing_to_undo_says_so_rather_than_raising(window, app):
+    window.state._undo.clear()
+    assert window.state.undo() == ""
+
+
+def test_a_rule_reports_what_it_matches_not_only_how_many(window, app):
+    build = window.pages["build"]
+    window.show_page("build")
+    window.state.add_rule(Rule(pattern=r"Failed password for \w+",
+                               label="an auth failure"))
+    build._recount()
+    app.processEvents()
+    card = build.cards[-1]
+    assert "of" in card.hits.text().lower()
+    assert "Failed password for" in card.hits.toolTip()
+
+
+def test_a_rule_that_matches_nothing_says_so(window, app):
+    build = window.pages["build"]
+    window.show_page("build")
+    window.state.add_rule(Rule(pattern="NOTHING-LIKE-THIS-IS-PRESENT",
+                               label="a dead rule"))
+    build._recount()
+    app.processEvents()
+    assert "NOTHING" in build.cards[-1].hits.text()
+
+
+def test_the_insert_palette_offers_every_construct(window, app):
+    from sieve.ui import palette
+    build = window.pages["build"]
+    window.show_page("build")
+    window.state.add_rule(Rule(pattern="", label="empty"))
+    app.processEvents()
+    card = build.cards[-1]
+    actions = [a for a in card.insert.menu().actions() if not a.isSeparator()]
+    assert len(actions) == len(palette.flat())
+
+
+def test_inserting_a_construct_selects_the_part_you_replace(window, app):
+    build = window.pages["build"]
+    window.show_page("build")
+    window.state.add_rule(Rule(pattern="", label="empty"))
+    app.processEvents()
+    card = build.cards[-1]
+    card.pattern.set_text("")
+    card._insert("(?:‹this›|‹that›)")
+    assert card.pattern.toPlainText() == "(?:this|that)"
+    assert card.pattern.textCursor().selectedText() == "this"
+
+
+def test_proof_refuses_to_auto_run_a_catastrophic_shape(window, app):
+    """The window used to freeze permanently on exactly the shapes Safety
+    exists to flag, because matcher.run() executed on the GUI thread."""
+    import time
+    window.state.set_sample("\n".join(["ordinary"] * 40
+                                      + ["a" * 36 + " " + "a" * 12 + "!"]), "")
+    window.state.add_rule(Rule(pattern=r"(\w+\s?)+$", label="a bad shape"))
+    proof = window.pages["proof"]
+    window.show_page("proof")
+    started = time.perf_counter()
+    proof._run()
+    assert time.perf_counter() - started < 2.0, "the GUI thread was blocked"
+    assert proof.run_anyway.isVisible()
+    assert "Not run automatically" in proof.hint.text()
