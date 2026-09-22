@@ -10,7 +10,6 @@ The corpus is untrusted too: it is a log, and logs contain whatever was written
 to them. None of it may hang, crash, or quietly change what a pattern means.
 """
 
-import json
 import re
 import signal
 import time
@@ -19,7 +18,7 @@ import pytest
 
 from sieve.core import explain, flavors, matcher, scan
 from sieve.core.rules import (MAX_REPEAT, Recipe, RecipeError, Repeat, Rule,
-                              safe_count, safe_group_name)
+                              safe_count)
 
 
 def within(seconds: float):

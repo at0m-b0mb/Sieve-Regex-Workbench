@@ -11,7 +11,7 @@ change, so the cases travel with the pattern in the saved file.
 from __future__ import annotations
 
 from PyQt6.QtCore import Qt, QTimer
-from PyQt6.QtGui import QColor, QTextCursor, QTextFormat
+from PyQt6.QtGui import QColor, QFont, QTextCursor, QTextFormat
 from PyQt6.QtWidgets import (QAbstractItemView, QComboBox, QFileDialog,
                              QHBoxLayout,
                              QHeaderView, QLineEdit, QPlainTextEdit,
@@ -19,6 +19,7 @@ from PyQt6.QtWidgets import (QAbstractItemView, QComboBox, QFileDialog,
                              QTextEdit, QVBoxLayout, QWidget)
 
 from ...core import matcher, redos, samples
+from ...core.compare import Baseline, compare
 from ...core.proof import Case, SHOULD_MATCH, SHOULD_NOT
 from .. import theme
 from ..marks import MapRow, MatchMap
@@ -36,6 +37,7 @@ class ProofPage(QWidget):
         # pattern; cleared whenever the pattern changes.
         self._force_run = False
         self._screened: str | None = None
+        self._baseline: Baseline | None = None
 
         self._debounce = QTimer(self)
         self._debounce.setSingleShot(True)
@@ -132,6 +134,33 @@ class ProofPage(QWidget):
         self.timing = label("", object_name="Faint")
         tally.add(self.timing)
         box.addWidget(tally)
+
+        # The question after every edit is "what did that let in?", and no
+        # regex tool answers it. Take a baseline, edit, see what crossed.
+        diff = Card("What changed")
+        self.diff_state = Badge("no baseline", "neutral", self.mode)
+        diff.add_layout(row(self.diff_state, None))
+        self.diff_headline = label("", wrap=True)
+        diff.add(self.diff_headline)
+        self.diff_detail = QTableWidget(0, 2)
+        self.diff_detail.setHorizontalHeaderLabels(["", "Line"])
+        self.diff_detail.verticalHeader().setVisible(False)
+        self.diff_detail.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
+        self.diff_detail.horizontalHeader().setSectionResizeMode(
+            1, QHeaderView.ResizeMode.Stretch)
+        self.diff_detail.setMinimumHeight(110)
+        self.diff_detail.setMinimumWidth(200)
+        self.diff_detail.setVisible(False)
+        diff.add(self.diff_detail)
+        take = QuietButton("Take a baseline")
+        take.setToolTip("Remember what the pattern keeps right now, so the "
+                        "next edit can be measured against it")
+        take.clicked.connect(self._take_baseline)
+        self.clear_baseline = QuietButton("Clear")
+        self.clear_baseline.clicked.connect(self._clear_baseline)
+        self.clear_baseline.setVisible(False)
+        diff.add_layout(row(take, self.clear_baseline, None))
+        box.addWidget(diff)
 
         fields = Card("Captured fields")
         self.fields = QTableWidget(0, 3)
@@ -285,6 +314,7 @@ class ProofPage(QWidget):
         self._result = result
         self._paint(result)
         self._fill_fields(result)
+        self._update_diff()
         self._run_cases()
         self._sync_map()
 
@@ -384,6 +414,66 @@ class ProofPage(QWidget):
             self.fields.setItem(i, 2, QTableWidgetItem(value))
         self.fields.resizeColumnToContents(0)
         self.fields.resizeColumnToContents(1)
+
+    # -- comparison ----------------------------------------------------------
+
+    def _take_baseline(self) -> None:
+        if self._result is None or self._result.error:
+            self.state.status("Nothing to take a baseline of yet", "warn")
+            return
+        self._baseline = Baseline.of(self._result)
+        self.clear_baseline.setVisible(True)
+        self.state.status(
+            f"Baseline taken: {len(self._baseline.kept)} lines kept", "pass")
+        self._update_diff()
+
+    def _clear_baseline(self) -> None:
+        self._baseline = None
+        self.clear_baseline.setVisible(False)
+        self._update_diff()
+
+    def _update_diff(self) -> None:
+        if self._baseline is None or self._result is None or self._result.error:
+            self.diff_state.set_tone("neutral", "no baseline")
+            self.diff_headline.setText(
+                "Take a baseline, then edit the pattern. What crosses the line "
+                "in either direction appears here — which is the question you "
+                "are actually asking when you loosen a rule.")
+            self.diff_headline.setStyleSheet(
+                f"{theme.font_css('small')}"
+                f"color: {theme.color('ink_muted', self.mode)};")
+            self.diff_detail.setVisible(False)
+            return
+
+        difference = compare(self._baseline, self._result)
+        if not difference.changed:
+            self.diff_state.set_tone("neutral", "unchanged")
+        elif difference.gained and difference.lost:
+            self.diff_state.set_tone("warn", "moved sideways")
+        elif difference.gained:
+            self.diff_state.set_tone("warn", "looser")
+        else:
+            self.diff_state.set_tone("pass", "stricter")
+
+        self.diff_headline.setText(
+            difference.headline() + ". " + difference.direction())
+        self.diff_headline.setStyleSheet("")
+
+        rows = ([("+", line) for line in difference.gained]
+                + [("\u2212", line) for line in difference.lost])
+        self.diff_detail.setVisible(bool(rows))
+        self.diff_detail.setRowCount(len(rows))
+        mono = QFont(theme.MONO.split(",")[0]); mono.setPixelSize(11)
+        for i, (sign, line) in enumerate(rows):
+            mark = QTableWidgetItem(sign)
+            tone = "pass" if sign == "+" else "fail"
+            mark.setForeground(QColor(theme.color(tone, self.mode)))
+            self.diff_detail.setItem(i, 0, mark)
+            item = QTableWidgetItem(line)
+            item.setFont(mono)
+            item.setToolTip(line)
+            self.diff_detail.setItem(i, 1, item)
+        self.diff_detail.resizeColumnToContents(0)
 
     # -- proof cases ---------------------------------------------------------
 
