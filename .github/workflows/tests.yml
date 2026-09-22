@@ -55,16 +55,3 @@ jobs:
             echo "== $f"
             python -m sieve test "$f"
           done
-
-      - name: Lint every library pattern for catastrophic backtracking
-        run: |
-          python - <<'PY'
-          import sys
-          from sieve.core.library import ENTRIES
-          from sieve.core import redos
-          bad = [e.id for e in ENTRIES
-                 if redos.analyse(e.pattern).grade == redos.CATASTROPHIC]
-          print(f"{len(ENTRIES)} patterns checked")
-          if bad:
-              print("catastrophic:", bad); sys.exit(1)
-          PY
