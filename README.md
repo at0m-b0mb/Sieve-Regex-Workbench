@@ -12,8 +12,8 @@
 [![python](https://img.shields.io/badge/python-3.10%20%E2%80%93%203.13-7A5D18)](https://www.python.org/)
 [![platform](https://img.shields.io/badge/platform-macOS%20%C2%B7%20Windows%20%C2%B7%20Linux-7A5D18)](#install)
 [![licence](https://img.shields.io/badge/licence-MIT-7A5D18)](LICENSE)
-[![patterns](https://img.shields.io/badge/library-58%20tested%20patterns-C39B24)](#the-library)
-[![tests count](https://img.shields.io/badge/tests-600%2B-C39B24)](#tests)
+[![patterns](https://img.shields.io/badge/library-71%20tested%20patterns-C39B24)](#the-library)
+[![tests count](https://img.shields.io/badge/tests-800%2B-C39B24)](#tests)
 
 **Build a pattern from _find_, _require_ and _exclude_ rules.
 Prove it against cases that must match and cases that must never.
@@ -47,7 +47,7 @@ application hangs off that spine.
 ```mermaid
 flowchart LR
     SRC["<b>Sample text</b><br/>a corpus, a paste, or a log file"]
-    LIB["<b>Library</b><br/>58 tested patterns"]
+    LIB["<b>Library</b><br/>71 tested patterns"]
     CASES["<b>Proof cases</b><br/>must match / must never"]
 
     FIND["<b>FIND</b><br/>what the match is made of"]
@@ -116,6 +116,17 @@ coloured by verdict. At a glance you see whether hits cluster or spread, whether
 an Exclude rule ate a whole region, and whether the pattern fires on *every*
 line — which almost always means it is looser than you intended.
 
+### What changed — the question no other regex tool answers
+
+Take a baseline of what your pattern keeps, edit it, and Proof tells you what
+crossed the line in either direction — and which way the pattern moved:
+
+> **LOOSER** — 3 newly kept. *The pattern got looser: it now keeps everything
+> it did before, and more.*
+
+Looser, stricter, or **sideways** — gained some and lost others, which is
+neither, and is not called either.
+
 ### Safety — does this pattern blow up?
 
 ![Safety](docs/screenshots/light-safety.png)
@@ -148,7 +159,7 @@ different is the worst outcome available.
 
 ## The library
 
-**58 patterns across 10 families**, and every one carries the examples it must
+**71 patterns across 10 families**, and every one carries the examples it must
 match and the examples it must not. The suite runs all of them, so a broken
 pattern fails CI instead of failing a detection.
 
@@ -263,7 +274,7 @@ pip install -r requirements-dev.txt
 python3 -m pytest
 ```
 
-Over 600 tests, on three operating systems and three Python versions. The ones
+Over 800 tests, on three operating systems and three Python versions. The ones
 that matter most:
 
 - **Proof and Ship can never disagree** — a fuzzer runs thousands of generated
@@ -279,6 +290,11 @@ that matter most:
 - Every colour pairing meeting WCAG AA in both themes.
 - The window itself, driven headlessly: every page built, both themes applied,
   every target emitted, a real sweep run, a document round-tripped.
+- **Hostile input**, in `tests/test_hostile.py`: crafted capture names that try
+  to break out of `(?P<name>…)`, repetition counts of a billion, malformed
+  documents, 20 MB lines, lone surrogates, bidi marks, symlink loops, and
+  unreadable files — none of which may hang, crash, or quietly change what a
+  pattern means.
 
 ---
 

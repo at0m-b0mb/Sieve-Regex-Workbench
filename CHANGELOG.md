@@ -54,6 +54,17 @@ emits. Everything below follows from taking that seriously.
   cleared it, so the widget described history rather than the pattern in front
   of it.
 
+- **"What changed" on Proof.** Take a baseline of what a pattern keeps, edit
+  it, and see the lines that crossed in either direction — with a word for
+  which way it moved: looser, stricter, or sideways. The question every
+  detection engineer asks after an edit, and no regex tool answers.
+- **Thirteen more library patterns**, taking it to 71: Stripe, Google API,
+  Anthropic and OpenAI, npm/PyPI/Docker publishing tokens, SendGrid/Twilio/
+  Mailgun, Azure SAS signatures, Kubernetes service-account tokens, JA3 and
+  JA4 TLS fingerprints, `/etc/passwd` entries, crontab lines, SNMP community
+  strings, logfmt pairs and JSON log lines. Every credential example is
+  assembled from pieces so a checkout does not trip anyone's secret scanner.
+
 ### Fixed — the library
 
 Thirteen confirmed misses, each now covered by a proof case:

